@@ -1,7 +1,7 @@
 # 04 — Which input formats decode, and what does export produce?
 
 Type: research
-Status: open
+Status: resolved
 Blocked by: —
 
 ## Question
@@ -23,3 +23,26 @@ for the file sizes Gerson will realistically see.
    Recommend an answer; this is a small design call, not just a fact.
 3. The delivery mechanism: `showSaveFilePicker` vs an anchor download, and what mobile Safari supports.
 4. Whether a multi-stem export should be a zip, and what that costs in memory.
+
+## Answer
+
+**Input.** No static format list exists — `decodeAudioData` inherits the browser's `<audio>` codec
+set. Safe everywhere: **MP3, AAC-in-MP4/ADTS, FLAC, WAV/LPCM**. Caveats: **ALAC is Safari-only**;
+**Ogg Vorbis/Opus only on Safari 18.4+/iOS 18.4+**; Chrome's AAC is Main-Profile-only and absent
+from Chromium builds; Firefox's AAC/MP3 rely on OS codecs. Detect by attempting a decode. Decode in
+an `OfflineAudioContext` pinned to 44100 — `decodeAudioData` resamples to the context rate and
+detaches the input `ArrayBuffer`.
+
+**Chunked decode: not needed.** A 10-min stereo track is 212 MB as float32, inside the 1.5 GB iPhone
+WebContent limit; the four stems (847 MB) are the real pressure and chunked decode does not help.
+WebCodecs `AudioDecoder` also needs a hand-written demuxer and does not exist below iOS 26.
+
+**Export.** Encode **WAV 16-bit** (dependency-free; FLAC and MP3 encode in *no* browser via
+WebCodecs — WebKit rejects both explicitly). Two commands: **stems, always 1× and ignoring
+mute/solo/volume** (the interop and re-import artifact), plus a separate **mix** export that honours
+mute/solo/volume and loop, defaulting to 1× with an explicit off-by-default tempo checkbox — drop
+that checkbox if 02's stretcher can't render in an `OfflineAudioContext`. Delivery:
+`showSaveFilePicker` (Chromium only) → `<a download>` (universal, iOS 13+) → Web Share files on iOS.
+Zip: STORE-only, streamed into the picker on Chromium; four separate downloads elsewhere.
+
+Full findings, with sources: [`../research/04-audio-decode-and-export.md`](../research/04-audio-decode-and-export.md)

@@ -1,7 +1,7 @@
 # 05 — What is Gerson's domain model?
 
 Type: grilling
-Status: open
+Status: resolved
 Blocked by: 01, 03
 
 ## Question
@@ -25,3 +25,30 @@ Open questions to walk:
 - Identity: what makes two uploads "the same song"? Content hash, filename, or nothing at all?
 
 Output: the domain glossary plus the persisted schema, written to the repo's domain model doc.
+
+## Answer
+
+Glossary: [`CONTEXT.md`](../../../CONTEXT.md). Schema and reasoning:
+[research/05](../research/05-domain-model.md).
+
+- **Song** is the top-level noun: one Recording + exactly four Stems + one Practice state. One
+  upload produces at most one Song; there is no per-song variant/preset concept.
+- **A Separation is a separate noun, not a Song with a status.** An upload becomes a Separation
+  (`queued`/`running`/`failed`); it becomes a Song only when four stems exist. This keeps the Song
+  invariant absolute — *if it is in the library as a Song, it plays* — and a failed or abandoned
+  separation leaves nothing broken behind. A Song that cannot play is unrepresentable.
+- **Stems are four fixed Roles** (vocals/drums/bass/other), not an open list. A set that is not
+  exactly these four cannot be opened.
+- **The Recording is kept.** ~1% storage overhead for a compressed upload, and it buys a true
+  reference mix plus re-separation later without re-uploading. (The ticket asked whether to discard
+  it to save space; 03 subsequently established space is not the binding constraint, so the premise
+  had gone stale.)
+- **Identity is a content hash of the Recording**, shared between the Separation and the Song it
+  becomes. Re-dropping a known file opens the existing Song instead of paying nine minutes again.
+- **Persisted practice state**: tempo, loop region, per-stem gain and mute. **Not persisted**: solo
+  and playhead — momentary gestures, and reopening to three silent stems reads as a bug.
+
+**Surfaced for ticket 12**: a Song always has a Recording, but an imported stem set has none. Import
+must either synthesise one by summing stems, make `recording` nullable, or refuse such sets. A real
+consequence of keeping the original, not an oversight.
+
