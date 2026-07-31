@@ -54,7 +54,8 @@ iterations, and live mute/solo/tempo changes without a glitch.
 
 ## Answer
 
-Prototype: `prototype/playback-harness/`. Full findings:
+Prototype: `prototype/playback-harness/`, captured on branch **`prototype/06-playback-harness`**
+(not on `main` — throwaway). Full findings:
 [research/06](../research/06-playback-engine-prototype.md). Material: the reference disco
 instrumental, separated with real `htdemucs`.
 
