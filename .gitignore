@@ -1,0 +1,6 @@
+.pnpm-store/
+app/dist/
+app/node_modules/
+prototype/
+*.mp3
+*.wav
