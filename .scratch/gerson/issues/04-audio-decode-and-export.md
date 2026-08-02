@@ -46,3 +46,27 @@ that checkbox if 02's stretcher can't render in an `OfflineAudioContext`. Delive
 Zip: STORE-only, streamed into the picker on Chromium; four separate downloads elsewhere.
 
 Full findings, with sources: [`../research/04-audio-decode-and-export.md`](../research/04-audio-decode-and-export.md)
+
+## Amendment (2026-08-02, from ticket 12)
+
+**"Export stems" must write FLAC Vorbis comments into each stem file** — role, the song's `id`,
+a schema version, and the title — rather than bare audio.
+
+Ticket 12 needs a stem to answer for itself: 14 showed that inferring role from filenames guesses
+invisibly, and 04's non-Chromium path is four separate downloads with no zip, so a `manifest.json`
+would be an awkward fifth file that gets separated from its audio. Embedded tags survive loose
+files, renaming, and picker reordering. Carrying the `id` is also what lets a song exported from one
+machine import elsewhere as **the same Song** rather than a duplicate.
+
+Everything else in 04 is unchanged: stems always 1× and always ignoring mute/solo/volume; the
+separate mix export; STORE-only zip on Chromium; four sequential downloads elsewhere.
+
+Two knock-ons:
+
+- **libFLAC writes metadata blocks natively**, so the WASM encoder from 03 should already support
+  this — confirm at build time rather than assume.
+- **WAV cannot carry these tags** (no tag block a decoder respects), so WAV exports import through
+  12's manual role-mapping path. This makes **FLAC the real export format and WAV the escape hatch**,
+  rather than the two being interchangeable as 04 originally implied.
+
+The export half and 12's import half must ship together, or the round-trip degrades to manual mapping.

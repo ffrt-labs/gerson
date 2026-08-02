@@ -1,8 +1,20 @@
 # 13 — Verify five iOS behaviours on a real device
 
 Type: task
-Status: open
+Status: closed — out of scope
 Blocked by: —
+
+## Closed: out of scope
+
+Closed while working ticket 11, when **mobile was ruled out of scope for this map**. Every item here
+exists only to select an iOS fallback path, so with no iOS target there is nothing to verify and
+nothing downstream waiting on the answers.
+
+This unblocked the destination: 13 was one of four blockers on 09, and the only ticket no agent
+could clear — item 5 alone needed a week of wall-clock with a real device.
+
+The questions are not wrong, just not on this route. If mobile is ever redrawn into scope, this
+returns as a fresh effort, not a resumption.
 
 ## Question
 
