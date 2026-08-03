@@ -1,0 +1,10 @@
+# Python requirements for htdemucs weights conversion.
+# Run: pip install -r requirements.txt
+# Then: DEMUCS_CPP_DIR=/path/to/demucs.cpp python convert-weights.py /path/to/output/
+
+# demucs is vendored inside sevagh/demucs.cpp at vendor/demucs — install from there:
+#   pip install -e /path/to/demucs.cpp/vendor/demucs
+# (do NOT install the public `demucs` package — it may use a different checkpoint)
+torch>=2.0
+torchaudio>=2.0
+numpy
