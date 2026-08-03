@@ -1,17 +1,160 @@
-import { Link } from 'react-router-dom';
-import { JobStatusBar } from '../components/JobStatusBar';
+import { useRef, useState, useCallback, type DragEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { JobStatusBar } from '../components/JobStatusBar.tsx';
+import { useLibrary } from '../hooks/useLibrary.ts';
+import { enqueue, type EnqueueResult } from '../intake/enqueue.ts';
+import { STEMS_SIZE_BYTES } from '../intake/space.ts';
+
+function formatBytes(bytes: number): string {
+  return `${Math.round(bytes / (1024 * 1024))} MB`;
+}
+
+function Notice({ result }: { result: EnqueueResult | null }) {
+  if (!result) return null;
+  if (result.kind === 'queued') return null;
+  if (result.kind === 'exists') return null; // navigation handled in handleFile
+
+  let msg: string;
+  switch (result.kind) {
+    case 'inflight':
+      msg = `"${result.title}" is already being separated.`;
+      break;
+    case 'mobile':
+      msg =
+        'Separation requires too much memory for a mobile device. ' +
+        'Use import to bring in stems separated on another device.';
+      break;
+    case 'nospace':
+      msg = `Not enough storage. ${formatBytes(result.needsBytes)} needed (${formatBytes(STEMS_SIZE_BYTES)} for stems plus the recording).`;
+      break;
+    case 'decode_failed':
+      msg = result.message;
+      break;
+  }
+
+  return <p className="library-notice">{msg}</p>;
+}
 
 export function Library() {
+  const { separations, songs, loading, addSeparation } = useLibrary();
+  const navigate = useNavigate();
+  const [dragging, setDragging] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [lastResult, setLastResult] = useState<EnqueueResult | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = useCallback(
+    async (file: File) => {
+      setProcessing(true);
+      setLastResult(null);
+      try {
+        const result = await enqueue(file);
+        if (result.kind === 'exists') {
+          navigate(`/player/${result.id}`);
+          return;
+        }
+        setLastResult(result);
+        if (result.kind === 'queued') {
+          addSeparation(result.separation);
+        }
+      } finally {
+        setProcessing(false);
+      }
+    },
+    [addSeparation, navigate],
+  );
+
+  const handleDrop = useCallback(
+    (e: DragEvent<HTMLElement>) => {
+      e.preventDefault();
+      setDragging(false);
+      const file = e.dataTransfer.files[0];
+      if (file) handleFile(file);
+    },
+    [handleFile],
+  );
+
+  const handleDragOver = useCallback((e: DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    setDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDragging(false);
+  }, []);
+
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) handleFile(file);
+      // Reset so the same file can be picked again
+      e.target.value = '';
+    },
+    [handleFile],
+  );
+
+  const isEmpty = separations.length === 0 && songs.length === 0;
+
   return (
-    <div className="surface">
+    <div
+      className={['surface', dragging ? 'surface--drop-active' : ''].filter(Boolean).join(' ')}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+    >
       <header className="surface-header">
         <h1>Gerson</h1>
+        <button
+          className="pick-file-btn"
+          onClick={() => inputRef.current?.click()}
+          disabled={processing}
+        >
+          {processing ? 'Checking…' : 'Add a song'}
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="audio/*"
+          aria-hidden="true"
+          style={{ display: 'none' }}
+          onChange={handleInputChange}
+        />
       </header>
+
       <main className="surface-main library-main">
-        <p className="empty-state">No songs yet. Drop an audio file to get started.</p>
-        <Link to="/player" className="dev-nav-link">[dev] open empty player →</Link>
+        <Notice result={lastResult} />
+
+        {loading ? null : isEmpty ? (
+          <p className="empty-state">No songs yet — drop an audio file or click "Add a song".</p>
+        ) : (
+          <ul className="library-list">
+            {songs.map(song => (
+              <li key={song.id} className="library-item">
+                <Link to={`/player/${song.id}`} className="library-item-link">
+                  <span className="library-item-title">{song.title}</span>
+                  <span className="library-item-meta">
+                    {Math.round(song.durationSec / 60)}m {Math.round(song.durationSec % 60)}s
+                  </span>
+                </Link>
+              </li>
+            ))}
+            {separations.map(sep => (
+              <li key={sep.id} className="library-item library-item--separation">
+                <span className="library-item-title">{sep.title}</span>
+                <span className="library-item-badge">{sep.status}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {dragging && (
+          <div className="drop-overlay" aria-hidden="true">
+            <p>Drop to add song</p>
+          </div>
+        )}
       </main>
-      <JobStatusBar />
+
+      <JobStatusBar separations={separations} />
     </div>
   );
 }
