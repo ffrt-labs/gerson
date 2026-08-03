@@ -4,9 +4,35 @@ import { JobStatusBar } from '../components/JobStatusBar.tsx';
 import { useLibrary } from '../hooks/useLibrary.ts';
 import { enqueue, type EnqueueResult } from '../intake/enqueue.ts';
 import { STEMS_SIZE_BYTES } from '../intake/space.ts';
+import type { Separation } from '../domain/types.ts';
 
 function formatBytes(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))} MB`;
+}
+
+// ~1.28× song duration based on observed htdemucs timing on a single worker.
+function estimateMinutes(durationSec: number): number {
+  return Math.max(1, Math.round((durationSec * 1.28) / 60));
+}
+
+function SeparationStatus({ sep }: { sep: Separation }) {
+  if (sep.status === 'failed') {
+    return <span className="library-item-badge library-item-badge--failed">failed</span>;
+  }
+  if (sep.status === 'running') {
+    return (
+      <span className="library-item-badge library-item-badge--running">
+        {Math.round(sep.progress * 100)}%
+      </span>
+    );
+  }
+  // queued
+  const est = estimateMinutes(sep.durationSec);
+  return (
+    <span className="library-item-badge library-item-badge--queued">
+      queued · ~{est} min
+    </span>
+  );
 }
 
 function Notice({ result }: { result: EnqueueResult | null }) {
@@ -141,7 +167,7 @@ export function Library() {
             {separations.map(sep => (
               <li key={sep.id} className="library-item library-item--separation">
                 <span className="library-item-title">{sep.title}</span>
-                <span className="library-item-badge">{sep.status}</span>
+                <SeparationStatus sep={sep} />
               </li>
             ))}
           </ul>

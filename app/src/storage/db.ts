@@ -1,7 +1,7 @@
 import type { Separation, Song } from '../domain/types.ts';
 
 const DB_NAME = 'gerson';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // v2: Separation.durationSec field added (no structural change)
 
 let _db: IDBDatabase | null = null;
 
@@ -61,4 +61,18 @@ export async function getSong(id: string): Promise<Song | undefined> {
 
 export async function getAllSongs(): Promise<Song[]> {
   return withStore('songs', 'readonly', s => s.getAll());
+}
+
+// OPFS files (stems + peaks) must be written before this call.
+// A crash between the two leaves orphaned bytes but no songs row.
+export async function commitSeparationToSong(id: string, song: Song): Promise<void> {
+  const db = await openDb();
+  const txn = db.transaction(['separations', 'songs'], 'readwrite');
+  txn.objectStore('separations').delete(id);
+  txn.objectStore('songs').put(song);
+  return new Promise<void>((resolve, reject) => {
+    txn.oncomplete = () => resolve();
+    txn.onerror = () => reject(txn.error);
+    txn.onabort = () => reject(txn.error);
+  });
 }

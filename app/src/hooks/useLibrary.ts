@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Separation, Song } from '../domain/types.ts';
 import { getAllSeparations, getAllSongs } from '../storage/db.ts';
+import { subscribe, addToQueue } from '../separation/engine.ts';
 
 export interface LibraryState {
   separations: Separation[];
@@ -25,10 +26,44 @@ export function useLibrary() {
       .catch((e: unknown) => {
         setState(s => ({ ...s, loading: false, error: e instanceof Error ? e : new Error(String(e)) }));
       });
+
+    const unsub = subscribe((event) => {
+      setState(s => {
+        switch (event.type) {
+          case 'progress':
+            return {
+              ...s,
+              separations: s.separations.map(sep =>
+                sep.id === event.id
+                  ? { ...sep, status: 'running' as const, progress: event.progress }
+                  : sep
+              ),
+            };
+          case 'done':
+            return {
+              ...s,
+              separations: s.separations.filter(sep => sep.id !== event.id),
+              songs: [...s.songs, event.song],
+            };
+          case 'failed':
+            return {
+              ...s,
+              separations: s.separations.map(sep =>
+                sep.id === event.id
+                  ? { ...sep, status: 'failed' as const, error: event.error }
+                  : sep
+              ),
+            };
+        }
+      });
+    });
+
+    return unsub;
   }, []);
 
   const addSeparation = useCallback((sep: Separation) => {
     setState(s => ({ ...s, separations: [...s.separations, sep] }));
+    addToQueue(sep);
   }, []);
 
   return { ...state, addSeparation };
