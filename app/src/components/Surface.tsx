@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { JobStatusBar } from './JobStatusBar';
+import { JobStatusBar } from './JobStatusBar.tsx';
 
 interface SurfaceProps {
   header: ReactNode;
