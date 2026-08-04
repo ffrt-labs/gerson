@@ -3,8 +3,9 @@ import { hashBytes } from './hash.ts';
 import { isMobileUA } from './mobile.ts';
 import { checkSpace } from './space.ts';
 import { decodeAudio, DecodeError } from './decode.ts';
-import { getSong, getSeparation, putSeparation } from '../storage/db.ts';
+import { getSong, getSeparation, getAllSeparations, putSeparation } from '../storage/db.ts';
 import { writeRecording } from '../storage/opfs.ts';
+import { nextQueueOrder } from '../separation/queue.ts';
 
 export type EnqueueResult =
   | { kind: 'queued'; separation: Separation }
@@ -68,6 +69,7 @@ export async function enqueue(file: File): Promise<EnqueueResult> {
   // Request persistent storage on the first save.
   await navigator.storage.persist();
 
+  const existing = await getAllSeparations();
   const separation: Separation = {
     id,
     title: stripExtension(file.name),
@@ -76,7 +78,11 @@ export async function enqueue(file: File): Promise<EnqueueResult> {
     uploadPath,
     progress: 0,
     error: null,
+    cause: null,
+    failedAt: null,
     startedAt: Date.now(),
+    interrupted: false,
+    queueOrder: nextQueueOrder(existing),
   };
   await putSeparation(separation);
 

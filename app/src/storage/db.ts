@@ -1,7 +1,7 @@
 import type { Separation, Song } from '../domain/types.ts';
 
 const DB_NAME = 'gerson';
-const DB_VERSION = 2; // v2: Separation.durationSec field added (no structural change)
+const DB_VERSION = 3; // v3: Separation queue/failure fields added (cause, failedAt, interrupted, queueOrder — no structural change)
 
 let _db: IDBDatabase | null = null;
 
@@ -49,6 +49,10 @@ export async function getSeparation(id: string): Promise<Separation | undefined>
 
 export async function putSeparation(sep: Separation): Promise<void> {
   await withStore('separations', 'readwrite', s => s.put(sep));
+}
+
+export async function deleteSeparation(id: string): Promise<void> {
+  await withStore('separations', 'readwrite', s => s.delete(id));
 }
 
 export async function getAllSeparations(): Promise<Separation[]> {

@@ -5,6 +5,8 @@ import { useLibrary } from '../hooks/useLibrary.ts';
 import { enqueue, type EnqueueResult } from '../intake/enqueue.ts';
 import { STEMS_SIZE_BYTES } from '../intake/space.ts';
 import type { Separation } from '../domain/types.ts';
+import { queuePosition } from '../separation/queue.ts';
+import { CPU_CONTENTION_NOTICE, RESUME_NOTICE, causeAdvice } from '../separation/copy.ts';
 
 function formatBytes(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))} MB`;
@@ -15,23 +17,104 @@ function estimateMinutes(durationSec: number): number {
   return Math.max(1, Math.round((durationSec * 1.28) / 60));
 }
 
-function SeparationStatus({ sep }: { sep: Separation }) {
+interface SeparationActions {
+  onCancel: (id: string) => void;
+  onRetry: (id: string) => void;
+  onDismiss: (id: string) => void;
+  onResume: (id: string) => void;
+  onReorder: (id: string, direction: 'up' | 'down') => void;
+}
+
+function SeparationRow({
+  sep,
+  separations,
+  actions,
+}: {
+  sep: Separation;
+  separations: Separation[];
+  actions: SeparationActions;
+}) {
   if (sep.status === 'failed') {
-    return <span className="library-item-badge library-item-badge--failed">failed</span>;
-  }
-  if (sep.status === 'running') {
     return (
-      <span className="library-item-badge library-item-badge--running">
-        {Math.round(sep.progress * 100)}%
-      </span>
+      <li className="library-item library-item--separation">
+        <div className="library-item-main">
+          <span className="library-item-title">{sep.title}</span>
+          <span className="library-item-badge library-item-badge--failed">failed</span>
+        </div>
+        <p className="library-item-detail">
+          {new Date(sep.failedAt ?? sep.startedAt).toLocaleString()} — {causeAdvice(sep.cause ?? 'worker')}
+        </p>
+        <div className="library-item-controls">
+          <button onClick={() => actions.onRetry(sep.id)}>Retry</button>
+          <button onClick={() => actions.onDismiss(sep.id)}>Dismiss</button>
+        </div>
+      </li>
     );
   }
+
+  if (sep.status === 'running') {
+    return (
+      <li className="library-item library-item--separation">
+        <div className="library-item-main">
+          <span className="library-item-title">{sep.title}</span>
+          <span className="library-item-badge library-item-badge--running">
+            {Math.round(sep.progress * 100)}%
+          </span>
+        </div>
+        <p className="library-item-detail">{CPU_CONTENTION_NOTICE}</p>
+        <div className="library-item-controls">
+          <button onClick={() => actions.onCancel(sep.id)}>Cancel</button>
+        </div>
+      </li>
+    );
+  }
+
+  if (sep.interrupted) {
+    return (
+      <li className="library-item library-item--separation">
+        <div className="library-item-main">
+          <span className="library-item-title">{sep.title}</span>
+          <span className="library-item-badge library-item-badge--interrupted">interrupted</span>
+        </div>
+        <p className="library-item-detail">{RESUME_NOTICE}</p>
+        <div className="library-item-controls">
+          <button onClick={() => actions.onResume(sep.id)}>Resume</button>
+          <button onClick={() => actions.onCancel(sep.id)}>Cancel</button>
+        </div>
+      </li>
+    );
+  }
+
   // queued
+  const position = queuePosition(separations, sep.id);
+  const total = separations.filter(s => s.status === 'queued' && !s.interrupted).length;
   const est = estimateMinutes(sep.durationSec);
   return (
-    <span className="library-item-badge library-item-badge--queued">
-      queued · ~{est} min
-    </span>
+    <li className="library-item library-item--separation">
+      <div className="library-item-main">
+        <span className="library-item-title">{sep.title}</span>
+        <span className="library-item-badge library-item-badge--queued">
+          queued · position {position ?? '—'} of {total} · ~{est} min
+        </span>
+      </div>
+      <div className="library-item-controls">
+        <button
+          onClick={() => actions.onReorder(sep.id, 'up')}
+          disabled={position === null || position <= 1}
+          aria-label={`Move ${sep.title} up in queue`}
+        >
+          ▲
+        </button>
+        <button
+          onClick={() => actions.onReorder(sep.id, 'down')}
+          disabled={position === null || position >= total}
+          aria-label={`Move ${sep.title} down in queue`}
+        >
+          ▼
+        </button>
+        <button onClick={() => actions.onCancel(sep.id)}>Cancel</button>
+      </div>
+    </li>
   );
 }
 
@@ -62,8 +145,25 @@ function Notice({ result }: { result: EnqueueResult | null }) {
 }
 
 export function Library() {
-  const { separations, songs, loading, addSeparation } = useLibrary();
+  const {
+    separations,
+    songs,
+    loading,
+    addSeparation,
+    cancelSeparation,
+    dismissSeparation,
+    retrySeparation,
+    resumeSeparation,
+    reorderSeparation,
+  } = useLibrary();
   const navigate = useNavigate();
+  const separationActions: SeparationActions = {
+    onCancel: cancelSeparation,
+    onRetry: retrySeparation,
+    onDismiss: dismissSeparation,
+    onResume: resumeSeparation,
+    onReorder: reorderSeparation,
+  };
   const [dragging, setDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [lastResult, setLastResult] = useState<EnqueueResult | null>(null);
@@ -165,10 +265,12 @@ export function Library() {
               </li>
             ))}
             {separations.map(sep => (
-              <li key={sep.id} className="library-item library-item--separation">
-                <span className="library-item-title">{sep.title}</span>
-                <SeparationStatus sep={sep} />
-              </li>
+              <SeparationRow
+                key={sep.id}
+                sep={sep}
+                separations={separations}
+                actions={separationActions}
+              />
             ))}
           </ul>
         )}
@@ -180,7 +282,7 @@ export function Library() {
         )}
       </main>
 
-      <JobStatusBar separations={separations} />
+      <JobStatusBar separations={separations} onCancel={cancelSeparation} />
     </div>
   );
 }

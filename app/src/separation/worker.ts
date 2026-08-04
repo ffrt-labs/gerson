@@ -8,8 +8,20 @@ import {
 } from '../storage/opfs.ts';
 import { commitSeparationToSong, putSeparation } from '../storage/db.ts';
 import { computePeaks } from './peaks.ts';
-import type { Role, Song, Separation, StemRef } from '../domain/types.ts';
+import type { Role, Song, Separation, StemRef, SeparationFailureCause } from '../domain/types.ts';
 import { ROLES, defaultPracticeState } from '../domain/types.ts';
+
+// Tags which phase an error came from — worker/compute (decode, inference)
+// vs. storage (writing stems, peaks, or committing the Song) — so a failure
+// can be reported with a named, not generalised, cause. See spec §7.4.
+class SeparationRunError extends Error {
+  failureCause: SeparationFailureCause;
+
+  constructor(message: string, failureCause: SeparationFailureCause) {
+    super(message);
+    this.failureCause = failureCause;
+  }
+}
 
 interface DemucsModule {
   _malloc(size: number): number;
@@ -127,6 +139,10 @@ async function runSeparation(separation: Separation): Promise<Song> {
   // 7 output pairs required by the WASM ABI; only slots 0–3 carry stem audio.
   const outPtrs = Array.from({ length: 14 }, () => mod._malloc(bytesF32));
 
+  // Defaults to the compute phase; flipped around each storage write below so
+  // a failure there is reported with cause 'storage', not 'worker'.
+  let phase: SeparationFailureCause = 'worker';
+
   try {
     mod.HEAPF32.set(inputL, f32idx(ptrL));
     mod.HEAPF32.set(inputR, f32idx(ptrR));
@@ -163,8 +179,10 @@ async function runSeparation(separation: Separation): Promise<Song> {
       const flacBytes = encoder.finish();
 
       // OPFS before IDB: if tab dies after this line there is no Song row.
+      phase = 'storage';
       await writeStem(id, role, flacBytes);
       await writePeaks(id, role, peaks);
+      phase = 'worker';
 
       stemRefs[role] = { path: stemPath(id, role), bytes: flacBytes.byteLength, peaksPath: peaksPath(id, role) };
     }
@@ -185,9 +203,13 @@ async function runSeparation(separation: Separation): Promise<Song> {
       practice: defaultPracticeState(),
     };
 
+    phase = 'storage';
     await commitSeparationToSong(id, song);
     return song;
 
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new SeparationRunError(message, phase);
   } finally {
     mod._free(ptrL);
     mod._free(ptrR);
@@ -204,8 +226,10 @@ self.addEventListener('message', (evt: MessageEvent<{ type: string; separation: 
     (song) => { self.postMessage({ type: 'done', song }); },
     (err: unknown) => {
       const error = err instanceof Error ? err.message : String(err);
-      putSeparation({ ...separation, status: 'failed', error }).catch(() => undefined);
-      self.postMessage({ type: 'failed', error });
+      const cause: SeparationFailureCause = err instanceof SeparationRunError ? err.failureCause : 'worker';
+      const failedAt = Date.now();
+      putSeparation({ ...separation, status: 'failed', error, cause, failedAt }).catch(() => undefined);
+      self.postMessage({ type: 'failed', error, cause, failedAt });
     },
   );
 });

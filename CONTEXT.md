@@ -38,8 +38,11 @@ _Avoid_: Original, source file, master, upload
 
 **Separation**:
 The work of turning one uploaded recording into four Stems, and the thing that exists in the library
-while that work is pending. Becomes a Song when it succeeds; leaves nothing behind when it fails or
-is abandoned. A Separation is never playable.
+while that work is pending. Becomes a Song when it succeeds; leaves nothing behind when cancelled. A
+failed Separation is the exception to "leaves nothing behind": it persists, with its cause and
+timestamp, until the user dismisses it — the wreckage of a multi-minute job is the message, and
+Retry reuses the retained Recording rather than asking for the file again. A Separation is never
+playable.
 _Avoid_: Job, task, split, processing, import
 
 **Role**:

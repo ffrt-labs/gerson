@@ -92,8 +92,15 @@ a {
 
 .job-status-item {
   display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.job-status-item-main {
+  display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.5rem;
 }
 
 .job-status-badge {
@@ -101,6 +108,22 @@ a {
   opacity: 0.7;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.job-status-notice {
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.job-status-cancel {
+  background: none;
+  border: 1px solid #444;
+  border-radius: 3px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  margin-left: auto;
 }
 
 /* ─── Library ──────────────────────────────────────────────────────────────── */
@@ -151,7 +174,50 @@ a {
 }
 
 .library-item--separation {
-  opacity: 0.6;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  opacity: 0.75;
+}
+
+.library-item-main {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.library-item-detail {
+  font-size: 0.8rem;
+  opacity: 0.7;
+  line-height: 1.4;
+}
+
+.library-item-controls {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.library-item-controls button {
+  background: none;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.6rem;
+}
+
+.library-item-controls button:hover:not(:disabled) {
+  background: #2a2a2a;
+}
+
+.library-item-controls button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.library-item-badge--interrupted {
+  color: #d9a441;
 }
 
 .library-item-link {
