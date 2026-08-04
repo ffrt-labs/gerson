@@ -29,6 +29,34 @@ export async function readRecording(path: string): Promise<Uint8Array> {
   return new Uint8Array(await fileData.arrayBuffer());
 }
 
+async function ignoreMissing(fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'NotFoundError') return;
+    throw e;
+  }
+}
+
+// Deletes everything a non-succeeding Separation left behind: the uploaded
+// Recording and any stems written before it was cancelled or failed.
+// Best-effort on missing entries — a Separation that never got far enough
+// to write anything is not an error.
+export async function deleteSeparationBytes(id: string, uploadPath: string): Promise<void> {
+  const root = await navigator.storage.getDirectory();
+  const [dirName, fileName] = uploadPath.split('/');
+
+  await ignoreMissing(async () => {
+    const dir = await root.getDirectoryHandle(dirName);
+    await dir.removeEntry(fileName);
+  });
+
+  await ignoreMissing(async () => {
+    const stems = await root.getDirectoryHandle(STEMS_DIR);
+    await stems.removeEntry(id, { recursive: true });
+  });
+}
+
 export function stemPath(id: string, role: Role): string {
   return `${STEMS_DIR}/${id}/${role}.flac`;
 }

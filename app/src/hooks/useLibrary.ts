@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Separation, Song } from '../domain/types.ts';
 import { getAllSeparations, getAllSongs } from '../storage/db.ts';
-import { subscribe, addToQueue } from '../separation/engine.ts';
+import { subscribe, addToQueue, cancel, dismiss, retry, resume, reorder } from '../separation/engine.ts';
 
 export interface LibraryState {
   separations: Separation[];
@@ -49,10 +49,20 @@ export function useLibrary() {
             return {
               ...s,
               separations: s.separations.map(sep =>
-                sep.id === event.id
-                  ? { ...sep, status: 'failed' as const, error: event.error }
-                  : sep
+                sep.id === event.separation.id ? event.separation : sep
               ),
+            };
+          case 'updated':
+            return {
+              ...s,
+              separations: s.separations.map(sep =>
+                sep.id === event.separation.id ? event.separation : sep
+              ),
+            };
+          case 'removed':
+            return {
+              ...s,
+              separations: s.separations.filter(sep => sep.id !== event.id),
             };
         }
       });
@@ -63,8 +73,24 @@ export function useLibrary() {
 
   const addSeparation = useCallback((sep: Separation) => {
     setState(s => ({ ...s, separations: [...s.separations, sep] }));
-    addToQueue(sep);
+    addToQueue();
   }, []);
 
-  return { ...state, addSeparation };
+  const cancelSeparation = useCallback((id: string) => { void cancel(id); }, []);
+  const dismissSeparation = useCallback((id: string) => { void dismiss(id); }, []);
+  const retrySeparation = useCallback((id: string) => { void retry(id); }, []);
+  const resumeSeparation = useCallback((id: string) => { void resume(id); }, []);
+  const reorderSeparation = useCallback((id: string, direction: 'up' | 'down') => {
+    void reorder(id, direction);
+  }, []);
+
+  return {
+    ...state,
+    addSeparation,
+    cancelSeparation,
+    dismissSeparation,
+    retrySeparation,
+    resumeSeparation,
+    reorderSeparation,
+  };
 }

@@ -44,6 +44,11 @@ export interface Song {
 
 export type SeparationStatus = 'queued' | 'running' | 'failed';
 
+// Named, not generalised: each cause leads to a different suggested action.
+// A cancellation is never one of these — cancelling deletes the Separation
+// outright rather than leaving a failed record behind.
+export type SeparationFailureCause = 'worker' | 'storage';
+
 export interface Separation {
   id: string;          // same content hash as the Song it will become
   title: string;
@@ -51,8 +56,12 @@ export interface Separation {
   status: SeparationStatus;
   uploadPath: string;  // OPFS path to the uploaded bytes
   progress: number;    // 0–1, from demucs.cpp PROGRESS_UPDATE
-  error: string | null; // populated when failed; null means cancelled, not an error
-  startedAt: number;   // epoch ms
+  error: string | null;                    // raw message, populated when failed
+  cause: SeparationFailureCause | null;     // populated when failed; drives the user-facing advice
+  failedAt: number | null;                 // epoch ms, populated when failed
+  startedAt: number;   // epoch ms, when the Separation was first queued
+  interrupted: boolean; // true when a running job was reverted to queued by a reload; waits for Resume
+  queueOrder: number;   // dispatch order among queued, non-interrupted Separations; lower runs sooner
 }
 
 export function defaultPracticeState(): PracticeState {
