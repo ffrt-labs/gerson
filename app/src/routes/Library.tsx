@@ -5,7 +5,7 @@ import { useLibrary } from '../hooks/useLibrary.ts';
 import { enqueue, type EnqueueResult } from '../intake/enqueue.ts';
 import { STEMS_SIZE_BYTES } from '../intake/space.ts';
 import type { Separation } from '../domain/types.ts';
-import { queuePosition } from '../separation/queue.ts';
+import { queuePosition, orderedQueue } from '../separation/queue.ts';
 import { CPU_CONTENTION_NOTICE, RESUME_NOTICE, causeAdvice } from '../separation/copy.ts';
 
 function formatBytes(bytes: number): string {
@@ -25,6 +25,32 @@ interface SeparationActions {
   onReorder: (id: string, direction: 'up' | 'down') => void;
 }
 
+// The shell every Separation row shares — a title, a status badge, an
+// optional explanatory line, and a row of controls. Branches below only
+// decide what goes in each slot.
+function SeparationShell({
+  title,
+  badge,
+  detail,
+  controls,
+}: {
+  title: string;
+  badge: React.ReactNode;
+  detail?: string;
+  controls: React.ReactNode;
+}) {
+  return (
+    <li className="library-item library-item--separation">
+      <div className="library-item-main">
+        <span className="library-item-title">{title}</span>
+        {badge}
+      </div>
+      {detail && <p className="library-item-detail">{detail}</p>}
+      <div className="library-item-controls">{controls}</div>
+    </li>
+  );
+}
+
 function SeparationRow({
   sep,
   separations,
@@ -36,68 +62,60 @@ function SeparationRow({
 }) {
   if (sep.status === 'failed') {
     return (
-      <li className="library-item library-item--separation">
-        <div className="library-item-main">
-          <span className="library-item-title">{sep.title}</span>
-          <span className="library-item-badge library-item-badge--failed">failed</span>
-        </div>
-        <p className="library-item-detail">
-          {new Date(sep.failedAt ?? sep.startedAt).toLocaleString()} — {causeAdvice(sep.cause ?? 'worker')}
-        </p>
-        <div className="library-item-controls">
+      <SeparationShell
+        title={sep.title}
+        badge={<span className="library-item-badge library-item-badge--failed">failed</span>}
+        detail={`${new Date(sep.failedAt ?? sep.startedAt).toLocaleString()} — ${causeAdvice(sep.cause ?? 'worker')}`}
+        controls={<>
           <button onClick={() => actions.onRetry(sep.id)}>Retry</button>
           <button onClick={() => actions.onDismiss(sep.id)}>Dismiss</button>
-        </div>
-      </li>
+        </>}
+      />
     );
   }
 
   if (sep.status === 'running') {
     return (
-      <li className="library-item library-item--separation">
-        <div className="library-item-main">
-          <span className="library-item-title">{sep.title}</span>
+      <SeparationShell
+        title={sep.title}
+        badge={
           <span className="library-item-badge library-item-badge--running">
             {Math.round(sep.progress * 100)}%
           </span>
-        </div>
-        <p className="library-item-detail">{CPU_CONTENTION_NOTICE}</p>
-        <div className="library-item-controls">
-          <button onClick={() => actions.onCancel(sep.id)}>Cancel</button>
-        </div>
-      </li>
+        }
+        detail={CPU_CONTENTION_NOTICE}
+        controls={<button onClick={() => actions.onCancel(sep.id)}>Cancel</button>}
+      />
     );
   }
 
   if (sep.interrupted) {
     return (
-      <li className="library-item library-item--separation">
-        <div className="library-item-main">
-          <span className="library-item-title">{sep.title}</span>
-          <span className="library-item-badge library-item-badge--interrupted">interrupted</span>
-        </div>
-        <p className="library-item-detail">{RESUME_NOTICE}</p>
-        <div className="library-item-controls">
+      <SeparationShell
+        title={sep.title}
+        badge={<span className="library-item-badge library-item-badge--interrupted">interrupted</span>}
+        detail={RESUME_NOTICE}
+        controls={<>
           <button onClick={() => actions.onResume(sep.id)}>Resume</button>
           <button onClick={() => actions.onCancel(sep.id)}>Cancel</button>
-        </div>
-      </li>
+        </>}
+      />
     );
   }
 
   // queued
   const position = queuePosition(separations, sep.id);
-  const total = separations.filter(s => s.status === 'queued' && !s.interrupted).length;
+  const total = orderedQueue(separations).length;
   const est = estimateMinutes(sep.durationSec);
   return (
-    <li className="library-item library-item--separation">
-      <div className="library-item-main">
-        <span className="library-item-title">{sep.title}</span>
+    <SeparationShell
+      title={sep.title}
+      badge={
         <span className="library-item-badge library-item-badge--queued">
           queued · position {position ?? '—'} of {total} · ~{est} min
         </span>
-      </div>
-      <div className="library-item-controls">
+      }
+      controls={<>
         <button
           onClick={() => actions.onReorder(sep.id, 'up')}
           disabled={position === null || position <= 1}
@@ -113,8 +131,8 @@ function SeparationRow({
           ▼
         </button>
         <button onClick={() => actions.onCancel(sep.id)}>Cancel</button>
-      </div>
-    </li>
+      </>}
+    />
   );
 }
 
@@ -169,35 +187,41 @@ export function Library() {
   const [lastResult, setLastResult] = useState<EnqueueResult | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = useCallback(
-    async (file: File) => {
+  // Enqueues each file in turn — sequentially, so their Separations get
+  // distinct, correctly-ordered queueOrder values, and so several files
+  // dropped at once each become their own queued Separation rather than
+  // only the first one.
+  const handleFiles = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0 || processing) return;
       setProcessing(true);
       setLastResult(null);
       try {
-        const result = await enqueue(file);
-        if (result.kind === 'exists') {
-          navigate(`/player/${result.id}`);
-          return;
-        }
-        setLastResult(result);
-        if (result.kind === 'queued') {
-          addSeparation(result.separation);
+        for (const file of files) {
+          const result = await enqueue(file);
+          if (result.kind === 'exists' && files.length === 1) {
+            navigate(`/player/${result.id}`);
+            return;
+          }
+          setLastResult(result);
+          if (result.kind === 'queued') {
+            addSeparation(result.separation);
+          }
         }
       } finally {
         setProcessing(false);
       }
     },
-    [addSeparation, navigate],
+    [addSeparation, navigate, processing],
   );
 
   const handleDrop = useCallback(
     (e: DragEvent<HTMLElement>) => {
       e.preventDefault();
       setDragging(false);
-      const file = e.dataTransfer.files[0];
-      if (file) handleFile(file);
+      handleFiles(Array.from(e.dataTransfer.files));
     },
-    [handleFile],
+    [handleFiles],
   );
 
   const handleDragOver = useCallback((e: DragEvent<HTMLElement>) => {
@@ -211,12 +235,12 @@ export function Library() {
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) handleFile(file);
-      // Reset so the same file can be picked again
+      const files = Array.from(e.target.files ?? []);
+      handleFiles(files);
+      // Reset so the same file(s) can be picked again
       e.target.value = '';
     },
-    [handleFile],
+    [handleFiles],
   );
 
   const isEmpty = separations.length === 0 && songs.length === 0;
@@ -241,6 +265,7 @@ export function Library() {
           ref={inputRef}
           type="file"
           accept="audio/*"
+          multiple
           aria-hidden="true"
           style={{ display: 'none' }}
           onChange={handleInputChange}

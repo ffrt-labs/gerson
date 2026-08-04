@@ -1,19 +1,22 @@
 /**
- * Separation engine — main-thread singleton that manages the worker pool and
- * dispatches the queue. Call start() once from main.tsx.
+ * Separation engine — main-thread singleton that manages the single running
+ * worker and dispatches the queue. Call start() once from main.tsx.
  *
  * One Separation runs at a time; the rest queue. Running two at once is
  * pointless when worker count is memory-bound — two jobs would each get a
  * share of the workers and both would take longer, at higher peak memory —
- * so dispatch never lets more than one slot be busy, even though the pool
- * itself is sized larger. Worker count is memory-bound and never exposed in
- * the UI.
+ * so there is exactly one worker, not a pool sized by device RAM.
+ *
+ * Every operation that reads-then-writes the catalogue (dispatching,
+ * cancelling, retrying, resuming, reordering) runs through a single mutex so
+ * two calls arriving close together — a job finishing while the user clicks
+ * Cancel, two quick clicks on a reorder arrow — can't interleave their reads
+ * and clobber each other's writes.
  */
 
 import type { Separation, Song, SeparationFailureCause } from '../domain/types.ts';
 import { getAllSeparations, getSeparation, putSeparation, deleteSeparation } from '../storage/db.ts';
 import { deleteSeparationBytes } from '../storage/opfs.ts';
-import { computeWorkerCount } from './workerCount.ts';
 import { orderedQueue, reorderQueue, nextQueueOrder } from './queue.ts';
 
 // ─── Public event types ───────────────────────────────────────────────────────
@@ -35,10 +38,10 @@ const WORKER_CRASH_MESSAGE =
 interface Slot {
   worker: Worker;
   busy: boolean;
-  job: Separation | null; // the Separation currently dispatched to this slot
+  job: Separation | null; // the Separation currently dispatched to this worker
 }
 
-const slots: Slot[] = [];
+let current: Slot | null = null;
 const listeners = new Set<Listener>();
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -63,7 +66,7 @@ export function addToQueue(): void {
  * Start the engine.  Reads all queued/running Separations from IDB, reverts
  * any interrupted 'running' one back to 'queued' (marked interrupted, so it
  * waits for an explicit Resume rather than restarting itself), then creates
- * the worker pool and starts dispatching.
+ * the worker and starts dispatching.
  */
 export async function start(): Promise<void> {
   const all = await getAllSeparations();
@@ -76,28 +79,26 @@ export async function start(): Promise<void> {
     running.map(s => putSeparation({ ...s, status: 'queued', progress: 0, interrupted: true })),
   );
 
-  const count = computeWorkerCount();
-  for (let i = 0; i < count; i++) {
-    slots.push(createSlot());
-  }
-
+  current = createSlot();
   dispatch();
 }
 
 /**
- * Cancels a running or queued Separation: terminates its worker if running,
- * then deletes the Separation and its bytes. Leaves nothing behind.
+ * Cancels a running or queued Separation: terminates the worker if it was
+ * running this one, then deletes the Separation and its bytes. Leaves
+ * nothing behind.
  */
 export async function cancel(id: string): Promise<void> {
-  const slot = slots.find(s => s.job?.id === id);
-  const job = slot?.job ?? null;
-  if (slot) terminateSlot(slot);
+  await locked(async () => {
+    const job = current?.job?.id === id ? current.job : null;
+    if (job) terminateSlot();
 
-  const sep = job ?? await getSeparation(id);
-  await deleteSeparation(id);
-  if (sep) await deleteSeparationBytes(id, sep.uploadPath);
+    const sep = job ?? await getSeparation(id);
+    await deleteSeparation(id);
+    if (sep) await deleteSeparationBytes(id, sep.uploadPath);
 
-  emit({ type: 'removed', id });
+    emit({ type: 'removed', id });
+  });
   dispatch();
 }
 
@@ -105,12 +106,14 @@ export async function cancel(id: string): Promise<void> {
  * Dismisses a failed Separation: deletes it and its retained Recording.
  */
 export async function dismiss(id: string): Promise<void> {
-  const sep = await getSeparation(id);
-  if (!sep) return;
+  await locked(async () => {
+    const sep = await getSeparation(id);
+    if (!sep) return;
 
-  await deleteSeparation(id);
-  await deleteSeparationBytes(id, sep.uploadPath);
-  emit({ type: 'removed', id });
+    await deleteSeparation(id);
+    await deleteSeparationBytes(id, sep.uploadPath);
+    emit({ type: 'removed', id });
+  });
 }
 
 /**
@@ -118,22 +121,24 @@ export async function dismiss(id: string): Promise<void> {
  * Joins the back of the queue.
  */
 export async function retry(id: string): Promise<void> {
-  const sep = await getSeparation(id);
-  if (!sep || sep.status !== 'failed') return;
+  await locked(async () => {
+    const sep = await getSeparation(id);
+    if (!sep || sep.status !== 'failed') return;
 
-  const all = await getAllSeparations();
-  const updated: Separation = {
-    ...sep,
-    status: 'queued',
-    progress: 0,
-    error: null,
-    cause: null,
-    failedAt: null,
-    interrupted: false,
-    queueOrder: nextQueueOrder(all),
-  };
-  await putSeparation(updated);
-  emit({ type: 'updated', separation: updated });
+    const all = await getAllSeparations();
+    const updated: Separation = {
+      ...sep,
+      status: 'queued',
+      progress: 0,
+      error: null,
+      cause: null,
+      failedAt: null,
+      interrupted: false,
+      queueOrder: nextQueueOrder(all),
+    };
+    await putSeparation(updated);
+    emit({ type: 'updated', separation: updated });
+  });
   dispatch();
 }
 
@@ -142,13 +147,15 @@ export async function retry(id: string): Promise<void> {
  * mid-inference resume — and joins the back of the queue.
  */
 export async function resume(id: string): Promise<void> {
-  const sep = await getSeparation(id);
-  if (!sep || !sep.interrupted) return;
+  await locked(async () => {
+    const sep = await getSeparation(id);
+    if (!sep || !sep.interrupted) return;
 
-  const all = await getAllSeparations();
-  const updated: Separation = { ...sep, interrupted: false, queueOrder: nextQueueOrder(all) };
-  await putSeparation(updated);
-  emit({ type: 'updated', separation: updated });
+    const all = await getAllSeparations();
+    const updated: Separation = { ...sep, interrupted: false, queueOrder: nextQueueOrder(all) };
+    await putSeparation(updated);
+    emit({ type: 'updated', separation: updated });
+  });
   dispatch();
 }
 
@@ -156,18 +163,30 @@ export async function resume(id: string): Promise<void> {
  * Moves a queued Separation up or down by one position.
  */
 export async function reorder(id: string, direction: 'up' | 'down'): Promise<void> {
-  const all = await getAllSeparations();
-  const changed = reorderQueue(all, id, direction);
-  if (!changed) return;
+  await locked(async () => {
+    const all = await getAllSeparations();
+    const changed = reorderQueue(all, id, direction);
+    if (!changed) return;
 
-  await Promise.all(changed.map(s => putSeparation(s)));
-  for (const s of changed) emit({ type: 'updated', separation: s });
+    await Promise.all(changed.map(s => putSeparation(s)));
+    for (const s of changed) emit({ type: 'updated', separation: s });
+  });
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 function emit(e: EngineEvent): void {
   for (const l of listeners) l(e);
+}
+
+// Serialises every read-modify-write against the catalogue. A call queued
+// while another is in flight simply runs after it — see the module doc.
+let mutex: Promise<unknown> = Promise.resolve();
+
+function locked<T>(fn: () => Promise<T>): Promise<T> {
+  const run = mutex.then(fn, fn);
+  mutex = run.then(() => undefined, () => undefined);
+  return run;
 }
 
 function createSlot(): Slot {
@@ -180,7 +199,7 @@ function createSlot(): Slot {
   worker.addEventListener('message', (evt: MessageEvent) => {
     // Ignore messages from a worker that has since been replaced (e.g. by
     // cancel()) — terminate() may not prevent an already in-flight message.
-    if (!slots.includes(slot)) return;
+    if (current !== slot) return;
 
     const data = evt.data as {
       msg?: string;
@@ -220,10 +239,10 @@ function createSlot(): Slot {
   // A worker that dies without posting 'failed' (e.g. an OOM kill) still
   // needs its job reported and its slot replaced with a fresh worker.
   worker.addEventListener('error', () => {
-    if (!slots.includes(slot)) return;
+    if (current !== slot) return;
 
     const job = slot.job;
-    replaceSlot(slot);
+    replaceSlot();
     if (!job) return;
 
     const failed: Separation = {
@@ -241,52 +260,27 @@ function createSlot(): Slot {
   return slot;
 }
 
-function terminateSlot(slot: Slot): void {
-  slot.worker.terminate();
-  replaceSlot(slot);
+function terminateSlot(): void {
+  current?.worker.terminate();
+  replaceSlot();
 }
 
-function replaceSlot(slot: Slot): void {
-  const index = slots.indexOf(slot);
-  if (index === -1) return;
-  slots[index] = createSlot();
+function replaceSlot(): void {
+  current = createSlot();
 }
-
-let dispatchRunning = false;
-let dispatchDirty = false;
 
 function dispatch(): void {
-  void runDispatch();
-}
-
-// Serialises dispatchOnce() calls so two events arriving close together
-// (e.g. addToQueue and a job finishing) can't both claim the single slot.
-async function runDispatch(): Promise<void> {
-  if (dispatchRunning) {
-    dispatchDirty = true;
-    return;
-  }
-  dispatchRunning = true;
-  try {
-    do {
-      dispatchDirty = false;
-      await dispatchOnce();
-    } while (dispatchDirty);
-  } finally {
-    dispatchRunning = false;
-  }
+  void locked(dispatchOnce);
 }
 
 async function dispatchOnce(): Promise<void> {
-  if (slots.some(s => s.busy)) return; // one Separation runs at a time
-  const freeSlot = slots.find(s => !s.busy);
-  if (!freeSlot) return;
+  if (!current || current.busy) return; // one Separation runs at a time
 
   const all = await getAllSeparations();
   const next = orderedQueue(all)[0];
   if (!next) return;
 
-  freeSlot.busy = true;
-  freeSlot.job = next;
-  freeSlot.worker.postMessage({ type: 'run', separation: next });
+  current.busy = true;
+  current.job = next;
+  current.worker.postMessage({ type: 'run', separation: next });
 }
