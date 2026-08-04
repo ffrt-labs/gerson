@@ -51,8 +51,9 @@ export async function enqueue(file: File): Promise<EnqueueResult> {
 
   // Decode validates the file. originalBuffer is detached after this call.
   // No Separation is created if the file can't be decoded.
+  let durationSec: number;
   try {
-    await decodeAudio(originalBuffer);
+    ({ durationSec } = await decodeAudio(originalBuffer));
   } catch (e) {
     if (e instanceof DecodeError) {
       return { kind: 'decode_failed', message: e.message };
@@ -70,6 +71,7 @@ export async function enqueue(file: File): Promise<EnqueueResult> {
   const separation: Separation = {
     id,
     title: stripExtension(file.name),
+    durationSec,
     status: 'queued',
     uploadPath,
     progress: 0,

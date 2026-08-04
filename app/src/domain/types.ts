@@ -47,6 +47,7 @@ export type SeparationStatus = 'queued' | 'running' | 'failed';
 export interface Separation {
   id: string;          // same content hash as the Song it will become
   title: string;
+  durationSec: number; // decoded duration, for time-estimate display
   status: SeparationStatus;
   uploadPath: string;  // OPFS path to the uploaded bytes
   progress: number;    // 0–1, from demucs.cpp PROGRESS_UPDATE
