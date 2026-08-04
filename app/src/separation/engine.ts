@@ -27,7 +27,7 @@ interface Slot {
   jobId: string | null;
 }
 
-let slots: Slot[] = [];
+const slots: Slot[] = [];
 let pendingIds: string[] = [];
 const listeners = new Set<Listener>();
 
