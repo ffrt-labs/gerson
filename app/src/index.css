@@ -168,6 +168,7 @@ a {
 .library-item {
   display: flex;
   align-items: center;
+  gap: 0.75rem;
   padding: 0.6rem 0.75rem;
   border-radius: 4px;
   background: #1a1a1a;
@@ -223,9 +224,21 @@ a {
 .library-item-link {
   display: flex;
   align-items: center;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-decoration: none;
   gap: 0.75rem;
+}
+
+.library-item-title-input {
+  flex: 1;
+  min-width: 0;
+  background: #111;
+  border: 1px solid #555;
+  border-radius: 3px;
+  color: inherit;
+  font-size: 0.9rem;
+  padding: 0.2rem 0.4rem;
 }
 
 .library-item-link:hover .library-item-title {

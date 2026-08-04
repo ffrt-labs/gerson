@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Separation, Song } from '../domain/types.ts';
 import { getAllSeparations, getAllSongs } from '../storage/db.ts';
 import { subscribe, addToQueue, cancel, dismiss, retry, resume, reorder } from '../separation/engine.ts';
+import { renameSong as renameSongEngine, deleteSong as deleteSongEngine } from '../library/engine.ts';
+import { sortSongsNewestFirst } from '../library/sort.ts';
 
 export interface LibraryState {
   separations: Separation[];
@@ -84,13 +86,30 @@ export function useLibrary() {
     void reorder(id, direction);
   }, []);
 
+  const renameSong = useCallback(async (id: string, title: string) => {
+    const updated = await renameSongEngine(id, title);
+    if (updated) {
+      setState(s => ({ ...s, songs: s.songs.map(song => (song.id === id ? updated : song)) }));
+    }
+  }, []);
+
+  const deleteSong = useCallback(async (id: string) => {
+    await deleteSongEngine(id);
+    setState(s => ({ ...s, songs: s.songs.filter(song => song.id !== id) }));
+  }, []);
+
+  const songs = useMemo(() => sortSongsNewestFirst(state.songs), [state.songs]);
+
   return {
     ...state,
+    songs,
     addSeparation,
     cancelSeparation,
     dismissSeparation,
     retrySeparation,
     resumeSeparation,
     reorderSeparation,
+    renameSong,
+    deleteSong,
   };
 }
