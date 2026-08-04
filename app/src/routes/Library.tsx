@@ -4,7 +4,7 @@ import { JobStatusBar } from '../components/JobStatusBar.tsx';
 import { useLibrary } from '../hooks/useLibrary.ts';
 import { enqueue, type EnqueueResult } from '../intake/enqueue.ts';
 import { STEMS_SIZE_BYTES } from '../intake/space.ts';
-import type { Separation } from '../domain/types.ts';
+import type { Separation, Song } from '../domain/types.ts';
 import { queuePosition, orderedQueue } from '../separation/queue.ts';
 import { CPU_CONTENTION_NOTICE, RESUME_NOTICE, causeAdvice } from '../separation/copy.ts';
 
@@ -136,6 +136,66 @@ function SeparationRow({
   );
 }
 
+function SongRow({
+  song,
+  onRename,
+  onDelete,
+}: {
+  song: Song;
+  onRename: (id: string, title: string) => void;
+  onDelete: (song: Song) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(song.title);
+  const cancelledRef = useRef(false);
+
+  const startEditing = () => {
+    setDraft(song.title);
+    cancelledRef.current = false;
+    setEditing(true);
+  };
+
+  const commit = () => {
+    if (!cancelledRef.current) onRename(song.id, draft);
+    setEditing(false);
+  };
+
+  return (
+    <li className="library-item">
+      {editing ? (
+        <input
+          className="library-item-title-input"
+          value={draft}
+          autoFocus
+          aria-label={`Rename ${song.title}`}
+          onFocus={e => e.target.select()}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              e.currentTarget.blur();
+            } else if (e.key === 'Escape') {
+              cancelledRef.current = true;
+              e.currentTarget.blur();
+            }
+          }}
+        />
+      ) : (
+        <Link to={`/player/${song.id}`} className="library-item-link">
+          <span className="library-item-title">{song.title}</span>
+          <span className="library-item-meta">
+            {Math.round(song.durationSec / 60)}m {Math.round(song.durationSec % 60)}s
+          </span>
+        </Link>
+      )}
+      <div className="library-item-controls">
+        <button onClick={startEditing}>Rename</button>
+        <button onClick={() => onDelete(song)}>Delete</button>
+      </div>
+    </li>
+  );
+}
+
 function Notice({ result }: { result: EnqueueResult | null }) {
   if (!result) return null;
   if (result.kind === 'queued') return null;
@@ -173,8 +233,18 @@ export function Library() {
     retrySeparation,
     resumeSeparation,
     reorderSeparation,
+    renameSong,
+    deleteSong,
   } = useLibrary();
   const navigate = useNavigate();
+  const handleDeleteSong = useCallback(
+    (song: Song) => {
+      if (window.confirm(`Delete "${song.title}"? This removes it and its stems permanently.`)) {
+        deleteSong(song.id);
+      }
+    },
+    [deleteSong],
+  );
   const separationActions: SeparationActions = {
     onCancel: cancelSeparation,
     onRetry: retrySeparation,
@@ -280,14 +350,7 @@ export function Library() {
         ) : (
           <ul className="library-list">
             {songs.map(song => (
-              <li key={song.id} className="library-item">
-                <Link to={`/player/${song.id}`} className="library-item-link">
-                  <span className="library-item-title">{song.title}</span>
-                  <span className="library-item-meta">
-                    {Math.round(song.durationSec / 60)}m {Math.round(song.durationSec % 60)}s
-                  </span>
-                </Link>
-              </li>
+              <SongRow key={song.id} song={song} onRename={renameSong} onDelete={handleDeleteSong} />
             ))}
             {separations.map(sep => (
               <SeparationRow

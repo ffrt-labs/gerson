@@ -1,4 +1,4 @@
-import type { Role } from '../domain/types.ts';
+import type { Role, Song } from '../domain/types.ts';
 
 const RECORDINGS_DIR = 'recordings';
 const STEMS_DIR = 'stems';
@@ -38,13 +38,14 @@ async function ignoreMissing(fn: () => Promise<void>): Promise<void> {
   }
 }
 
-// Deletes everything a non-succeeding Separation left behind: the uploaded
-// Recording and any stems written before it was cancelled or failed.
-// Best-effort on missing entries — a Separation that never got far enough
-// to write anything is not an error.
-export async function deleteSeparationBytes(id: string, uploadPath: string): Promise<void> {
+// Deletes a Recording at the given path plus the stems directory for id, if
+// either exists. The shared shape behind deleteSeparationBytes (an upload
+// that never became a Song) and deleteSongBytes (a Song being removed
+// outright) — both leave nothing behind but a Recording that was never
+// written to begin with.
+async function deleteRecordingAndStems(id: string, recordingPath: string): Promise<void> {
   const root = await navigator.storage.getDirectory();
-  const [dirName, fileName] = uploadPath.split('/');
+  const [dirName, fileName] = recordingPath.split('/');
 
   await ignoreMissing(async () => {
     const dir = await root.getDirectoryHandle(dirName);
@@ -55,6 +56,21 @@ export async function deleteSeparationBytes(id: string, uploadPath: string): Pro
     const stems = await root.getDirectoryHandle(STEMS_DIR);
     await stems.removeEntry(id, { recursive: true });
   });
+}
+
+// Deletes everything a non-succeeding Separation left behind: the uploaded
+// Recording and any stems written before it was cancelled or failed.
+// Best-effort on missing entries — a Separation that never got far enough
+// to write anything is not an error.
+export async function deleteSeparationBytes(id: string, uploadPath: string): Promise<void> {
+  await deleteRecordingAndStems(id, uploadPath);
+}
+
+// Deletes every OPFS file a Song referenced: its Recording and all four
+// stems (and their peaks), leaving nothing orphaned. Best-effort on missing
+// entries.
+export async function deleteSongBytes(song: Song): Promise<void> {
+  await deleteRecordingAndStems(song.id, song.recording.path);
 }
 
 export function stemPath(id: string, role: Role): string {

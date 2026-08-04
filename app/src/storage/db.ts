@@ -63,6 +63,14 @@ export async function getSong(id: string): Promise<Song | undefined> {
   return withStore('songs', 'readonly', s => s.get(id));
 }
 
+export async function putSong(song: Song): Promise<void> {
+  await withStore('songs', 'readwrite', s => s.put(song));
+}
+
+export async function deleteSong(id: string): Promise<void> {
+  await withStore('songs', 'readwrite', s => s.delete(id));
+}
+
 export async function getAllSongs(): Promise<Song[]> {
   return withStore('songs', 'readonly', s => s.getAll());
 }
