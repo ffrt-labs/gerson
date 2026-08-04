@@ -48,8 +48,8 @@ export interface Transport {
   dispose(): void;
 }
 
-// 30ms of headroom (spec §4.1's splitComputation cost) so a change lands
-// cleanly rather than catching the node mid-quantum.
+// 50ms of headroom — above spec §4.1's 30ms splitComputation latency cost —
+// so a change lands cleanly rather than catching the node mid-quantum.
 const SCHEDULE_LOOKAHEAD_SECONDS = 0.05;
 
 /**
