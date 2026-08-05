@@ -11,6 +11,7 @@ import type { Role } from '../domain/types.ts';
 import { ROLES } from '../domain/types.ts';
 import {
   initialTransportState,
+  inputAt,
   play as playState,
   pause as pauseState,
   seek as seekState,
@@ -45,6 +46,13 @@ export interface Transport {
   setGain(role: Role, value: number): void;
   setMuted(role: Role, muted: boolean): void;
   isPlaying(): boolean;
+  /**
+   * The input-buffer position at `atTime` (an absolute AudioContext time) —
+   * pure main-thread arithmetic against the current anchor, never a worklet
+   * round-trip. Callers wanting a playhead evaluate this at
+   * `currentTime - outputLatency` (spec §4.6).
+   */
+  getPosition(atTime: number): number;
   dispose(): Promise<void>;
 }
 
@@ -105,6 +113,9 @@ export function createTransportEngine(
     },
     isPlaying() {
       return state.anchor.active;
+    },
+    getPosition(atTime) {
+      return inputAt(state, atTime);
     },
   };
 }

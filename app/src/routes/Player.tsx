@@ -27,6 +27,17 @@ async function releaseSession(session: Session): Promise<void> {
   await session.audioContext.close();
 }
 
+const MIN_RATE = 0.5;
+const MAX_RATE = 2;
+
+function formatRate(rate: number): string {
+  return `${rate.toFixed(2)}×`;
+}
+
+function formatPosition(seconds: number): string {
+  return `${Math.max(0, seconds).toFixed(2)}s`;
+}
+
 export function Player() {
   const { id } = useParams<{ id: string }>();
   // Keyed by id, so a stale result from a previous id reads as loading
@@ -50,6 +61,8 @@ export function Player() {
   const [loadState, setLoadState] = useState<LoadState | null>(null);
   const [playing, setPlaying] = useState(false);
   const [seekInput, setSeekInput] = useState('0');
+  const [rate, setRate] = useState(1);
+  const [position, setPosition] = useState(0);
   const sessionRef = useRef<Session | null>(null);
 
   // A stale result from a previous Song reads as 'loading', not an error
@@ -77,6 +90,8 @@ export function Player() {
         }
         sessionRef.current = { transport, audioContext };
         setPlaying(false);
+        setRate(1);
+        setPosition(0);
         setLoadState({ songId, status: 'ready', error: null });
       })
       .catch((e: unknown) => {
@@ -119,6 +134,40 @@ export function Player() {
     if (Number.isFinite(seconds)) sessionRef.current?.transport.seek(seconds);
   }, [seekInput]);
 
+  const changeRate = useCallback((next: number) => {
+    sessionRef.current?.transport.setRate(next);
+    setRate(next);
+  }, []);
+
+  const resetRate = useCallback(() => changeRate(1), [changeRate]);
+
+  // The playhead: main-thread arithmetic against the transport's anchor,
+  // evaluated at `currentTime - outputLatency` so it tracks what's actually
+  // in the listener's ears (§4.6) — never a message from the worklet, which
+  // would floor at 20 Hz and visibly stutter against this 60 fps repaint.
+  const lastPositionRef = useRef(0);
+  useEffect(() => {
+    let frame: number;
+    const tick = () => {
+      const session = sessionRef.current;
+      if (session) {
+        const { transport, audioContext } = session;
+        const at = audioContext.currentTime - audioContext.outputLatency;
+        const next = transport.getPosition(at);
+        // Skip the re-render when the position hasn't moved (e.g. paused,
+        // where inputAt holds steady) — still evaluated every frame so a
+        // seek or rate change is picked up on the very next one.
+        if (next !== lastPositionRef.current) {
+          lastPositionRef.current = next;
+          setPosition(next);
+        }
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
   return (
     <div className="surface">
       <header className="surface-header">
@@ -135,19 +184,37 @@ export function Player() {
         ) : loadStatus === 'error' ? (
           <p className="empty-state">{loadError}</p>
         ) : (
-          <div className="player-transport">
-            <button onClick={play} disabled={playing}>Play</button>
-            <button onClick={pause} disabled={!playing}>Pause</button>
-            <label>
-              Seek to (s):{' '}
-              <input
-                type="number"
-                value={seekInput}
-                onChange={e => setSeekInput(e.target.value)}
-              />
-            </label>
-            <button onClick={seek}>Seek</button>
-          </div>
+          <>
+            <div className="player-transport">
+              <button onClick={play} disabled={playing}>Play</button>
+              <button onClick={pause} disabled={!playing}>Pause</button>
+              <label>
+                Seek to (s):{' '}
+                <input
+                  type="number"
+                  value={seekInput}
+                  onChange={e => setSeekInput(e.target.value)}
+                />
+              </label>
+              <button onClick={seek}>Seek</button>
+              <span className="player-playhead">{formatPosition(position)}</span>
+            </div>
+            <div className="player-tempo">
+              <label>
+                Tempo{' '}
+                <input
+                  type="range"
+                  min={MIN_RATE}
+                  max={MAX_RATE}
+                  step={0.01}
+                  value={rate}
+                  onChange={e => changeRate(Number(e.target.value))}
+                />
+              </label>
+              <span className="player-tempo-readout">{formatRate(rate)}</span>
+              <button onClick={resetRate} disabled={rate === 1}>Reset to 1×</button>
+            </div>
+          </>
         )}
       </main>
       <JobStatusBar />
