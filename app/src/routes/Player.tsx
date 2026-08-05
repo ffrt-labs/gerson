@@ -145,6 +145,7 @@ export function Player() {
   // evaluated at `currentTime - outputLatency` so it tracks what's actually
   // in the listener's ears (§4.6) — never a message from the worklet, which
   // would floor at 20 Hz and visibly stutter against this 60 fps repaint.
+  const lastPositionRef = useRef(0);
   useEffect(() => {
     let frame: number;
     const tick = () => {
@@ -152,7 +153,14 @@ export function Player() {
       if (session) {
         const { transport, audioContext } = session;
         const at = audioContext.currentTime - audioContext.outputLatency;
-        setPosition(transport.getPosition(at));
+        const next = transport.getPosition(at);
+        // Skip the re-render when the position hasn't moved (e.g. paused,
+        // where inputAt holds steady) — still evaluated every frame so a
+        // seek or rate change is picked up on the very next one.
+        if (next !== lastPositionRef.current) {
+          lastPositionRef.current = next;
+          setPosition(next);
+        }
       }
       frame = requestAnimationFrame(tick);
     };
