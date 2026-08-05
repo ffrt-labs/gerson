@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { ROLES, type Role } from '../domain/types.ts';
+import type { Role } from '../domain/types.ts';
 import { createTransport, type StemBuffers, type Transport } from '../playback/transport.ts';
 
 // Dev-only route for issue #23: exercises the four-stretcher transport
@@ -43,14 +43,10 @@ export function PlaybackHarness() {
       // under the browser's user-gesture autoplay policy.
       const audioContext = new AudioContext();
 
-      const stems = {} as Record<Role, StemBuffers>;
-      // Sequential, not parallel: keeps the load's memory spike one stem
-      // wide instead of steady-state-plus-four (§4.4).
-      for (const role of ROLES) {
-        stems[role] = await fetchStem(role);
-      }
-
-      transportRef.current = await createTransport(audioContext, stems);
+      // fetchStem is handed straight to createTransport as the StemLoader —
+      // it fetches and decodes one role at a time, only as each is needed,
+      // keeping the load's memory spike one stem wide (§4.4).
+      transportRef.current = await createTransport(audioContext, fetchStem);
       setStatus('ready');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

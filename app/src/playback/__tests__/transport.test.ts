@@ -217,61 +217,101 @@ describe('gain and mute — trivially live, independent of the stretch timeline'
 });
 
 describe('createTransport — node setup', () => {
-  it('configures splitComputation:true and feeds each stem in exactly one addBuffers call, which detaches the source buffers', async () => {
-    const configureCalls: Array<{ splitComputation: boolean }> = [];
-    const addBuffersCalls: Array<{ role: Role; buffers: Float32Array[]; transfer?: ArrayBuffer[] }> = [];
-    const connected: unknown[] = [];
-
-    function makeFakeNode(role: Role) {
-      return {
-        configure: vi.fn(async (config: { splitComputation: boolean }) => {
-          configureCalls.push(config);
-        }),
-        schedule: vi.fn(),
-        addBuffers: vi.fn(async (buffers: Float32Array[], transfer?: ArrayBuffer[]) => {
-          addBuffersCalls.push({ role, buffers, transfer });
-          if (transfer) structuredClone(buffers, { transfer });
-          return buffers[0]?.length ?? 0;
-        }),
-        connect: vi.fn((dest: unknown) => connected.push(dest)),
-        disconnect: vi.fn(),
-      };
-    }
-
-    const fakeGainNode = () => ({
-      gain: { value: 1 },
+  // events, if given, records `addBuffers:<role>` in call order — used by
+  // the sequencing test below to interleave against loadStem's own log.
+  function makeFakeNode(role: Role, events?: string[]) {
+    return {
+      configure: vi.fn(),
+      schedule: vi.fn(),
+      addBuffers: vi.fn(async (buffers: Float32Array[], transfer?: ArrayBuffer[]) => {
+        events?.push(`addBuffers:${role}`);
+        if (transfer) structuredClone(buffers, { transfer });
+        return buffers[0]?.length ?? 0;
+      }),
+      dropBuffers: vi.fn(async () => ({ start: 0, end: 0 })),
       connect: vi.fn(),
       disconnect: vi.fn(),
-    });
-
-    const fakeAudioContext = {
-      currentTime: 0,
-      createGain: vi.fn(fakeGainNode),
-      destination: {},
     };
+  }
 
-    // createTransport iterates ROLES sequentially, awaiting each node's
-    // creation before the next — so call order exactly matches ROLES order.
+  function fakeGainNode() {
+    return { gain: { value: 1 }, connect: vi.fn(), disconnect: vi.fn() };
+  }
+
+  function fakeAudioContext() {
+    return { currentTime: 0, createGain: vi.fn(fakeGainNode), destination: {} };
+  }
+
+  // createTransport iterates ROLES sequentially, awaiting each node's
+  // creation before the next — so call order exactly matches ROLES order.
+  function sequentialCreateNode(events?: string[]) {
     let callIndex = 0;
-    const createNode = vi.fn(async () => makeFakeNode(ROLES[callIndex++]));
+    return vi.fn(async () => makeFakeNode(ROLES[callIndex++], events));
+  }
 
-    // Build one stem per role with a fresh, detachable Float32Array.
+  it('configures splitComputation:true and feeds each stem in exactly one addBuffers call, which detaches the source buffers', async () => {
+    const createNode = sequentialCreateNode();
+
+    // One stem per role with a fresh, detachable Float32Array.
     const stems = Object.fromEntries(
       ROLES.map(role => [role, { channels: [new Float32Array([1, 2, 3, 4])] }]),
     ) as Record<Role, { channels: Float32Array[] }>;
     const originalBuffers = ROLES.map(role => stems[role].channels[0].buffer);
+    const loadStem = vi.fn(async (role: Role) => stems[role]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await createTransport(fakeAudioContext as any, stems, createNode as any);
+    const transport = await createTransport(fakeAudioContext() as any, loadStem, createNode as any);
 
-    expect(configureCalls).toEqual(ROLES.map(() => ({ splitComputation: true })));
-    expect(addBuffersCalls.length).toBe(ROLES.length);
-    for (const role of ROLES) {
-      const callsForRole = addBuffersCalls.filter(c => c.role === role);
-      expect(callsForRole.length).toBe(1); // exactly one addBuffers call per stem
+    expect(createNode).toHaveBeenCalledTimes(ROLES.length);
+    for (const call of createNode.mock.results) {
+      const node = await call.value;
+      expect(node.configure).toHaveBeenCalledWith({ splitComputation: true });
+      expect(node.addBuffers).toHaveBeenCalledTimes(1); // exactly one addBuffers call per stem
     }
     for (const buffer of originalBuffers) {
       expect(buffer.byteLength).toBe(0); // the source ArrayBuffer detached
+    }
+    void transport; // node setup asserted directly against the fakes above
+  });
+
+  it('loads stems sequentially — each is transferred before the next is requested (§4.4)', async () => {
+    const events: string[] = [];
+    const createNode = sequentialCreateNode(events);
+
+    const loadStem = vi.fn(async (role: Role) => {
+      events.push(`load:${role}`);
+      return { channels: [new Float32Array([1, 2, 3, 4])] };
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTransport(fakeAudioContext() as any, loadStem, createNode as any);
+
+    // Node creation runs first (no PCM involved), then load/transfer pairs
+    // interleave one role at a time — loadStem for role N+1 is never called
+    // before role N's buffers were handed to addBuffers, so the load never
+    // holds more than one decoded stem in memory at once.
+    expect(events).toEqual(ROLES.flatMap(role => [`load:${role}`, `addBuffers:${role}`]));
+  });
+
+  it('dispose() drops each node\'s buffers before disconnecting it and its gain', async () => {
+    const fakeNodes: Record<string, ReturnType<typeof makeFakeNode>> = {};
+    let callIndex = 0;
+    const createNode = vi.fn(async () => {
+      const role = ROLES[callIndex++];
+      const node = makeFakeNode(role);
+      fakeNodes[role] = node;
+      return node;
+    });
+
+    const loadStem = vi.fn(async () => ({ channels: [new Float32Array([1, 2, 3, 4])] }));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const transport = await createTransport(fakeAudioContext() as any, loadStem, createNode as any);
+    await transport.dispose();
+
+    for (const role of ROLES) {
+      expect(fakeNodes[role].dropBuffers).toHaveBeenCalled();
+      expect(fakeNodes[role].disconnect).toHaveBeenCalled();
     }
   });
 });

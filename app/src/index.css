@@ -267,6 +267,43 @@ a {
   margin-left: auto;
 }
 
+/* ─── Player ───────────────────────────────────────────────────────────────── */
+
+.player-transport {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.player-transport button {
+  background: #222;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.75rem;
+}
+
+.player-transport button:hover:not(:disabled) {
+  background: #2a2a2a;
+}
+
+.player-transport button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.player-transport input {
+  background: #111;
+  border: 1px solid #555;
+  border-radius: 3px;
+  color: inherit;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.4rem;
+  width: 5rem;
+}
+
 /* ─── Drop zone ────────────────────────────────────────────────────────────── */
 
 .surface--drop-active {

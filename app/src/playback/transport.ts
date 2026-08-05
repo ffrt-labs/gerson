@@ -45,8 +45,11 @@ export interface Transport {
   setGain(role: Role, value: number): void;
   setMuted(role: Role, muted: boolean): void;
   isPlaying(): boolean;
-  dispose(): void;
+  dispose(): Promise<void>;
 }
+
+/** Loads one already-decoded Stem on demand — see createTransport. */
+export type StemLoader = (role: Role) => Promise<StemBuffers>;
 
 // 50ms of headroom — above spec §4.1's 30ms splitComputation latency cost —
 // so a change lands cleanly rather than catching the node mid-quantum.
@@ -111,16 +114,25 @@ export type CreateStretchNode = (
   options: { numberOfInputs: number; numberOfOutputs: number; outputChannelCount: number[] },
 ) => Promise<StretchNode>;
 
+// Stems are always stereo FLAC on disk (spec §3.5) — known before any stem
+// is decoded, so node creation never has to wait on `loadStem`.
+const STEM_CHANNEL_COUNT = 2;
+
 /**
- * Creates the four real nodes, configures them, loads each stem, and wires
- * up the engine above. The only place buffers are fed to the stretcher —
- * sequentially, and each stem in exactly one `addBuffers` call transferring
- * its channel ArrayBuffers, per §4.3/§4.4. `createNode` defaults to the real
- * signalsmith-stretch factory; tests inject a fake to run without a browser.
+ * Creates the four real nodes, configures them, loads each stem via
+ * `loadStem`, and wires up the engine above. Nodes are created up front
+ * (cheap — no PCM involved); stems are then loaded and fed to the stretcher
+ * one role at a time, each in exactly one `addBuffers` call transferring its
+ * channel ArrayBuffers (§4.3), and each is decoded and dropped before the
+ * next is requested — `loadStem` isn't called for a role until the previous
+ * role's buffers have already been transferred away, so the load's memory
+ * spike stays one stem wide rather than steady-state-plus-four (§4.4).
+ * `createNode` defaults to the real signalsmith-stretch factory; tests
+ * inject a fake to run without a browser.
  */
 export async function createTransport(
   audioContext: AudioContext,
-  stems: Record<Role, StemBuffers>,
+  loadStem: StemLoader,
   createNode: CreateStretchNode = SignalsmithStretch,
 ): Promise<Transport> {
   const nodes = {} as Record<Role, StretchNode>;
@@ -130,7 +142,7 @@ export async function createTransport(
     const node = await createNode(audioContext, {
       numberOfInputs: 1,
       numberOfOutputs: 1,
-      outputChannelCount: [stems[role].channels.length],
+      outputChannelCount: [STEM_CHANNEL_COUNT],
     });
     await node.configure({ splitComputation: true });
 
@@ -145,7 +157,7 @@ export async function createTransport(
   // Sequential, not parallel: a parallel load spikes memory to steady-state
   // plus four stems; sequential keeps the spike one stem wide (§4.4).
   for (const role of ROLES) {
-    const channels = stems[role].channels;
+    const { channels } = await loadStem(role);
     // Decoded PCM is always backed by a plain ArrayBuffer, never shared.
     await nodes[role].addBuffers(channels, channels.map(c => c.buffer as ArrayBuffer));
   }
@@ -154,11 +166,15 @@ export async function createTransport(
 
   return {
     ...engine,
-    dispose() {
-      for (const role of ROLES) {
+    async dispose() {
+      // dropBuffers releases the stretcher's own copy of the transferred
+      // audio before disconnecting — leaving the Player must not leak the
+      // previous Song's buffers into the next one.
+      await Promise.all(ROLES.map(async (role) => {
+        await nodes[role].dropBuffers();
         nodes[role].disconnect();
         gains[role].disconnect();
-      }
+      }));
     },
   };
 }

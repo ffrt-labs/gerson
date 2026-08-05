@@ -29,11 +29,15 @@ export async function readRecording(path: string): Promise<Uint8Array> {
   return new Uint8Array(await fileData.arrayBuffer());
 }
 
+export function isNotFoundError(e: unknown): boolean {
+  return e instanceof DOMException && e.name === 'NotFoundError';
+}
+
 async function ignoreMissing(fn: () => Promise<void>): Promise<void> {
   try {
     await fn();
   } catch (e) {
-    if (e instanceof DOMException && e.name === 'NotFoundError') return;
+    if (isNotFoundError(e)) return;
     throw e;
   }
 }
