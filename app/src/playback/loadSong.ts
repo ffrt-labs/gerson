@@ -14,7 +14,7 @@ import type { Role, Song } from '../domain/types.ts';
 import type { StemBuffers, StemLoader } from './transport.ts';
 import { decodeFlac } from '../codec/flac.ts';
 import { computePeaks, PEAKS_SAMPLES_PER_PIXEL } from '../separation/peaks.ts';
-import { readStem, readPeaks, writePeaks } from '../storage/opfs.ts';
+import { readStem, readPeaks, writePeaks, isNotFoundError } from '../storage/opfs.ts';
 
 export interface LoadSongStemDeps {
   readStem: typeof readStem;
@@ -24,10 +24,6 @@ export interface LoadSongStemDeps {
 }
 
 const defaultDeps: LoadSongStemDeps = { readStem, readPeaks, writePeaks, decodeFlac };
-
-function isNotFound(e: unknown): boolean {
-  return e instanceof DOMException && e.name === 'NotFoundError';
-}
 
 function expectedPeaksLength(sampleCount: number): number {
   return Math.ceil(sampleCount / PEAKS_SAMPLES_PER_PIXEL) * 4;
@@ -51,7 +47,7 @@ export async function loadSongStem(
   try {
     existingPeaks = await deps.readPeaks(ref.peaksPath);
   } catch (e) {
-    if (!isNotFound(e)) throw e;
+    if (!isNotFoundError(e)) throw e;
     existingPeaks = null;
   }
 

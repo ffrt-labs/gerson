@@ -52,10 +52,11 @@ export function Player() {
   const [seekInput, setSeekInput] = useState('0');
   const sessionRef = useRef<Session | null>(null);
 
-  // undefined = still loading (or stale for a previous Song) — read as the
-  // 'loading' status, not an error state, until proven otherwise.
-  const loadStatus: LoadStatus = song && loadState?.songId === song.id ? loadState.status : 'loading';
-  const loadError = song && loadState?.songId === song.id ? loadState.error : null;
+  // A stale result from a previous Song reads as 'loading', not an error
+  // state, until proven otherwise.
+  const currentLoad = song && loadState?.songId === song.id ? loadState : null;
+  const loadStatus: LoadStatus = currentLoad?.status ?? 'loading';
+  const loadError = currentLoad?.error ?? null;
 
   // Loads the four Stems into a fresh transport whenever the resolved Song
   // changes. The four Stems load sequentially, decoded straight to
@@ -79,6 +80,10 @@ export function Player() {
         setLoadState({ songId, status: 'ready', error: null });
       })
       .catch((e: unknown) => {
+        // createTransport rejecting mid-load (e.g. the 3rd stem fails to
+        // decode) leaves no Transport to dispose — but any nodes it already
+        // built and fed belong to this AudioContext, so closing it tears
+        // the whole graph down regardless of how far setup got.
         void audioContext.close();
         if (cancelled) return;
         setLoadState({ songId, status: 'error', error: e instanceof Error ? e.message : String(e) });
