@@ -45,6 +45,13 @@ export interface Transport {
   setRate(rate: number): void;
   setGain(role: Role, value: number): void;
   setMuted(role: Role, muted: boolean): void;
+  /**
+   * Soloing a Role silences the other three at the GainNode without
+   * altering their own stored gain/mute (§ Practice state: solo is a
+   * momentary gesture, never persisted). A soloed Role that is itself
+   * muted stays silent — solo overrides other Roles, not its own mute.
+   */
+  setSolo(role: Role, solo: boolean): void;
   isPlaying(): boolean;
   /**
    * The input-buffer position at `atTime` (an absolute AudioContext time) —
@@ -78,6 +85,7 @@ export function createTransportEngine(
   let state: TransportState = initialTransportState;
   const desiredGain: Record<Role, number> = { vocals: 1, drums: 1, bass: 1, other: 1 };
   const muted: Record<Role, boolean> = { vocals: false, drums: false, bass: false, other: false };
+  const soloed: Record<Role, boolean> = { vocals: false, drums: false, bass: false, other: false };
 
   function dispatch(next: TransportState): void {
     state = next;
@@ -86,8 +94,14 @@ export function createTransportEngine(
     for (const role of ROLES) nodes[role].schedule(next.anchor);
   }
 
+  function anySoloed(): boolean {
+    return ROLES.some(role => soloed[role]);
+  }
+
   function appliedGain(role: Role): number {
-    return muted[role] ? 0 : desiredGain[role];
+    if (muted[role]) return 0;
+    if (anySoloed() && !soloed[role]) return 0;
+    return desiredGain[role];
   }
 
   return {
@@ -110,6 +124,13 @@ export function createTransportEngine(
     setMuted(role, isMuted) {
       muted[role] = isMuted;
       gains[role].gain.value = appliedGain(role);
+    },
+    setSolo(role, isSolo) {
+      soloed[role] = isSolo;
+      // Unlike gain/mute, a solo change can affect every Role's applied
+      // gain — the other three go silent (or come back) as a side effect —
+      // so all four GainNodes are recomputed, not just the touched one.
+      for (const r of ROLES) gains[r].gain.value = appliedGain(r);
     },
     isPlaying() {
       return state.anchor.active;
