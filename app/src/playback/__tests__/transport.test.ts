@@ -216,6 +216,71 @@ describe('gain and mute — trivially live, independent of the stretch timeline'
   });
 });
 
+describe('getPosition — main-thread arithmetic, no worklet round-trip', () => {
+  // Every op is dispatched SCHEDULE_LOOKAHEAD_SECONDS ahead of `now()`, so
+  // each case advances `t` past that window before reading a position —
+  // exactness at the instant of a change is anchor.ts's job (see
+  // anchor.test.ts); these tests exercise the engine's plumbing to it.
+
+  it('tracks a running transport without any schedule() call', () => {
+    const nodes = fourNodes();
+    const gains = fourGains();
+    let t = 0;
+    const engine = createTransportEngine(nodes, gains, () => t);
+
+    engine.play();
+    t += 1;
+    const start = engine.getPosition(t);
+    const callsBefore = ROLES.map(role => nodes[role].scheduleCalls.length);
+
+    t += 10;
+    expect(engine.getPosition(t)).toBeCloseTo(start + 10, 10);
+
+    // Reading the position issues no schedule() calls on any node — it's
+    // pure arithmetic against the last anchor, never a worklet round-trip.
+    const callsAfter = ROLES.map(role => nodes[role].scheduleCalls.length);
+    expect(callsAfter).toEqual(callsBefore);
+  });
+
+  it('applies a new rate going forward once the change has landed', () => {
+    const nodes = fourNodes();
+    const gains = fourGains();
+    let t = 0;
+    const engine = createTransportEngine(nodes, gains, () => t);
+
+    engine.play();
+    t += 5;
+    engine.setRate(2);
+    t += 5;
+    const base = engine.getPosition(t);
+
+    t += 3;
+    expect(engine.getPosition(t)).toBeCloseTo(base + 3 * 2, 10);
+  });
+
+  it('lands on the seek target and continues from there at the current rate, regardless of rate', () => {
+    const nodes = fourNodes();
+    const gains = fourGains();
+    let t = 0;
+    const engine = createTransportEngine(nodes, gains, () => t);
+
+    engine.play();
+    t += 1;
+    engine.setRate(0.5);
+    t += 5;
+    engine.seek(90);
+    t += 1;
+    const afterSeek = engine.getPosition(t);
+    // Lands at (approximately, within the scheduling lookahead) the seek
+    // target — exactness at the instant of the seek is anchor.ts's job.
+    expect(afterSeek).toBeGreaterThan(89.5);
+    expect(afterSeek).toBeLessThan(90.5);
+
+    t += 4;
+    expect(engine.getPosition(t)).toBeCloseTo(afterSeek + 4 * 0.5, 10);
+  });
+});
+
 describe('createTransport — node setup', () => {
   // events, if given, records `addBuffers:<role>` in call order — used by
   // the sequencing test below to interleave against loadStem's own log.
