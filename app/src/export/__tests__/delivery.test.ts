@@ -171,7 +171,7 @@ describe('deliverStems', () => {
   it('routes to the share rung as the last resort', async () => {
     const rung = await deliverStems(FILES, 'Song.zip', {
       capabilities: { picker: false, anchor: false, share: true },
-      shareEnv: { canShare: () => true, share: async () => {} },
+      share: { canShare: () => true, share: async () => {} },
     });
     expect(rung).toBe('share');
   });

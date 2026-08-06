@@ -139,7 +139,7 @@ export interface DeliverStemsEnv {
   capabilities?: DeliveryCapabilities;
   picker?: PickerEnv;
   anchor?: AnchorEnv;
-  shareEnv?: ShareEnv;
+  share?: ShareEnv;
 }
 
 /** Delivers `files` via the first available rung of the ladder. Returns which rung was used. */
@@ -160,7 +160,7 @@ export async function deliverStems(
     return rung;
   }
   if (rung === 'share') {
-    await deliverViaShare(files, env.shareEnv);
+    await deliverViaShare(files, env.share);
     return rung;
   }
 

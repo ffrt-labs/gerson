@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import type { Song } from '../domain/types.ts';
 import { exportStems, type ExportFormat } from '../export/exportStems.ts';
 import { deliverStems } from '../export/delivery.ts';
+import { sanitizeForFilename } from '../export/filename.ts';
 
 interface ExportStemsControlProps {
   song: Song;
@@ -29,7 +30,7 @@ export function ExportStemsControl({ song }: ExportStemsControlProps) {
     setStatus('exporting');
     setError(null);
     exportStems(song, format)
-      .then(files => deliverStems(files, `${song.title}.zip`))
+      .then(files => deliverStems(files, `${sanitizeForFilename(song.title)}.zip`))
       .then(() => setStatus('idle'))
       .catch((e: unknown) => {
         if (isUserCancelled(e)) { setStatus('idle'); return; }
