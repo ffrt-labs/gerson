@@ -216,6 +216,64 @@ describe('gain and mute — trivially live, independent of the stretch timeline'
   });
 });
 
+describe('solo — silences the other three without touching their stored gain/mute', () => {
+  it('soloing one stem zeroes the gain of the other three, leaving the soloed one at its own gain', () => {
+    const nodes = fourNodes();
+    const gains = fourGains();
+    const engine = createTransportEngine(nodes, gains, () => 0);
+
+    engine.setGain('vocals', 0.4);
+    engine.setGain('drums', 0.6);
+    engine.setGain('bass', 0.8);
+    engine.setGain('other', 1.2);
+
+    engine.setSolo('drums', true);
+
+    expect(gains.vocals.gain.value).toBe(0);
+    expect(gains.bass.gain.value).toBe(0);
+    expect(gains.other.gain.value).toBe(0);
+    expect(gains.drums.gain.value).toBe(0.6);
+  });
+
+  it('unsoloing restores every stem to its own stored gain and mute, unchanged by the solo', () => {
+    const nodes = fourNodes();
+    const gains = fourGains();
+    const engine = createTransportEngine(nodes, gains, () => 0);
+
+    engine.setGain('vocals', 0.4);
+    engine.setMuted('bass', true);
+    engine.setGain('other', 1.2);
+
+    engine.setSolo('drums', true);
+    engine.setSolo('drums', false);
+
+    expect(gains.vocals.gain.value).toBe(0.4);
+    expect(gains.bass.gain.value).toBe(0); // still muted — the mute itself, not the solo
+    expect(gains.other.gain.value).toBe(1.2);
+    expect(gains.drums.gain.value).toBe(1); // default gain, never touched
+  });
+
+  it('a soloed stem that is itself muted stays silent', () => {
+    const nodes = fourNodes();
+    const gains = fourGains();
+    const engine = createTransportEngine(nodes, gains, () => 0);
+
+    engine.setMuted('drums', true);
+    engine.setSolo('drums', true);
+
+    expect(gains.drums.gain.value).toBe(0);
+  });
+
+  it('is gain-only, like mute — issues no stretcher schedule() calls', () => {
+    const nodes = fourNodes();
+    const gains = fourGains();
+    const engine = createTransportEngine(nodes, gains, () => 0);
+
+    engine.setSolo('drums', true);
+    for (const role of ROLES) expect(nodes[role].scheduleCalls.length).toBe(0);
+  });
+});
+
 describe('getPosition — main-thread arithmetic, no worklet round-trip', () => {
   // Every op is dispatched SCHEDULE_LOOKAHEAD_SECONDS ahead of `now()`, so
   // each case advances `t` past that window before reading a position —

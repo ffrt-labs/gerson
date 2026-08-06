@@ -2,9 +2,17 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { JobStatusBar } from '../components/JobStatusBar';
 import { getSong } from '../storage/db.ts';
+import { savePractice } from '../library/engine.ts';
 import { createTransport, type Transport } from '../playback/transport.ts';
 import { songStemLoader } from '../playback/loadSong.ts';
-import type { Song } from '../domain/types.ts';
+import { ROLES, defaultPracticeState, type PracticeState, type Role, type Song } from '../domain/types.ts';
+
+const ROLE_LABELS: Record<Role, string> = { vocals: 'Vocals', drums: 'Drums', bass: 'Bass', other: 'Other' };
+const NO_SOLO: Record<Role, boolean> = { vocals: false, drums: false, bass: false, other: false };
+
+function withStemPatch(practice: PracticeState, role: Role, patch: Partial<PracticeState['stems'][Role]>): PracticeState {
+  return { ...practice, stems: { ...practice.stems, [role]: { ...practice.stems[role], ...patch } } };
+}
 
 type LoadStatus = 'loading' | 'ready' | 'error';
 
@@ -30,8 +38,15 @@ async function releaseSession(session: Session): Promise<void> {
 const MIN_RATE = 0.5;
 const MAX_RATE = 2;
 
+const MIN_GAIN = 0;
+const MAX_GAIN = 1.5;
+
 function formatRate(rate: number): string {
   return `${rate.toFixed(2)}×`;
+}
+
+function formatGain(gain: number): string {
+  return gain.toFixed(2);
 }
 
 function formatPosition(seconds: number): string {
@@ -61,7 +76,9 @@ export function Player() {
   const [loadState, setLoadState] = useState<LoadState | null>(null);
   const [playing, setPlaying] = useState(false);
   const [seekInput, setSeekInput] = useState('0');
-  const [rate, setRate] = useState(1);
+  const [practice, setPractice] = useState<PracticeState>(defaultPracticeState());
+  // Solo is a momentary gesture (never persisted) — always off on open.
+  const [solo, setSolo] = useState<Record<Role, boolean>>(NO_SOLO);
   const [position, setPosition] = useState(0);
   const sessionRef = useRef<Session | null>(null);
 
@@ -89,9 +106,24 @@ export function Player() {
           return;
         }
         sessionRef.current = { transport, audioContext };
+
+        // Reopening a Song applies its saved Practice state (tempo,
+        // per-stem gain/mute) live, but never the momentary gestures —
+        // solo is off and the playhead sits at 0, or at the loop start
+        // when a loop is set.
+        transport.setRate(song.practice.tempo);
+        for (const role of ROLES) {
+          transport.setGain(role, song.practice.stems[role].gain);
+          transport.setMuted(role, song.practice.stems[role].muted);
+        }
+        const startAt = song.practice.loop?.startSec ?? 0;
+        if (startAt > 0) transport.seek(startAt);
+
         setPlaying(false);
-        setRate(1);
-        setPosition(0);
+        setPractice(song.practice);
+        setSolo(NO_SOLO);
+        setPosition(startAt);
+        lastPositionRef.current = startAt;
         setLoadState({ songId, status: 'ready', error: null });
       })
       .catch((e: unknown) => {
@@ -134,12 +166,39 @@ export function Player() {
     if (Number.isFinite(seconds)) sessionRef.current?.transport.seek(seconds);
   }, [seekInput]);
 
+  // Writes the next Practice state to state and to storage together — the
+  // Song's single Practice state is overwritten on every change, never
+  // versioned (spec: exactly one Practice state per Song).
+  const persistPractice = useCallback((next: PracticeState) => {
+    setPractice(next);
+    if (song) void savePractice(song.id, next);
+  }, [song]);
+
   const changeRate = useCallback((next: number) => {
     sessionRef.current?.transport.setRate(next);
-    setRate(next);
-  }, []);
+    persistPractice({ ...practice, tempo: next });
+  }, [practice, persistPractice]);
 
   const resetRate = useCallback(() => changeRate(1), [changeRate]);
+
+  const changeStemGain = useCallback((role: Role, value: number) => {
+    sessionRef.current?.transport.setGain(role, value);
+    persistPractice(withStemPatch(practice, role, { gain: value }));
+  }, [practice, persistPractice]);
+
+  const toggleStemMuted = useCallback((role: Role) => {
+    const muted = !practice.stems[role].muted;
+    sessionRef.current?.transport.setMuted(role, muted);
+    persistPractice(withStemPatch(practice, role, { muted }));
+  }, [practice, persistPractice]);
+
+  // Solo never touches Practice state — it's a momentary gesture, not
+  // persisted, and doesn't alter the soloed/other stems' stored gain/mute.
+  const toggleStemSolo = useCallback((role: Role) => {
+    const isSolo = !solo[role];
+    sessionRef.current?.transport.setSolo(role, isSolo);
+    setSolo({ ...solo, [role]: isSolo });
+  }, [solo]);
 
   // The playhead: main-thread arithmetic against the transport's anchor,
   // evaluated at `currentTime - outputLatency` so it tracks what's actually
@@ -207,12 +266,48 @@ export function Player() {
                   min={MIN_RATE}
                   max={MAX_RATE}
                   step={0.01}
-                  value={rate}
+                  value={practice.tempo}
                   onChange={e => changeRate(Number(e.target.value))}
                 />
               </label>
-              <span className="player-tempo-readout">{formatRate(rate)}</span>
-              <button onClick={resetRate} disabled={rate === 1}>Reset to 1×</button>
+              <span className="player-tempo-readout">{formatRate(practice.tempo)}</span>
+              <button onClick={resetRate} disabled={practice.tempo === 1}>Reset to 1×</button>
+            </div>
+            <div className="player-stems">
+              {ROLES.map(role => {
+                const stem = practice.stems[role];
+                return (
+                  <div className="player-stem-row" key={role}>
+                    <span className="player-stem-role">{ROLE_LABELS[role]}</span>
+                    <label className="player-stem-gain">
+                      Gain{' '}
+                      <input
+                        type="range"
+                        min={MIN_GAIN}
+                        max={MAX_GAIN}
+                        step={0.01}
+                        value={stem.gain}
+                        onChange={e => changeStemGain(role, Number(e.target.value))}
+                      />
+                    </label>
+                    <span className="player-stem-gain-readout">{formatGain(stem.gain)}</span>
+                    <button
+                      className={stem.muted ? 'player-stem-toggle player-stem-toggle--active' : 'player-stem-toggle'}
+                      aria-pressed={stem.muted}
+                      onClick={() => toggleStemMuted(role)}
+                    >
+                      Mute
+                    </button>
+                    <button
+                      className={solo[role] ? 'player-stem-toggle player-stem-toggle--active' : 'player-stem-toggle'}
+                      aria-pressed={solo[role]}
+                      onClick={() => toggleStemSolo(role)}
+                    >
+                      Solo
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </>
         )}
