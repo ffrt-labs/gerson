@@ -7,6 +7,7 @@
  */
 
 import { PEAKS_SAMPLES_PER_PIXEL } from '../separation/peaks.ts';
+import { clamp } from './clamp.ts';
 
 export interface Viewport {
   readonly startSec: number;
@@ -78,11 +79,4 @@ export function followViewport(
   minDurationSec: number,
 ): Viewport {
   return clampViewport({ startSec: positionSec, durationSec: viewport.durationSec }, songDurationSec, minDurationSec);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  if (max < min) return min;
-  if (value < min) return min;
-  if (value > max) return max;
-  return value;
 }

@@ -14,6 +14,7 @@
  */
 
 import { PEAKS_SAMPLES_PER_PIXEL } from '../separation/peaks.ts';
+import { clamp } from './clamp.ts';
 import type { Viewport } from './viewport.ts';
 
 export interface PeakColumn {
@@ -87,11 +88,4 @@ export function aggregatePeaksForViewport(
   const start = viewport.startSec * columnsPerSecond;
   const end = (viewport.startSec + viewport.durationSec) * columnsPerSecond;
   return aggregatePeaksToWidth(peaks, targetColumns, { start, end });
-}
-
-function clamp(value: number, min: number, max: number): number {
-  if (max < min) return min;
-  if (value < min) return min;
-  if (value > max) return max;
-  return value;
 }
