@@ -142,35 +142,47 @@ function buildVorbisCommentBlock(tags: Record<string, string>, isLast: boolean):
   return block;
 }
 
+// Any existing VORBIS_COMMENT block is dropped rather than left in place —
+// re-tagging an already-tagged file (as export does with a stem carrying
+// storage-internal tags) must not leave two comment blocks behind, since
+// nothing in the FLAC spec resolves that ambiguity for a reader.
 function injectVorbisComments(flacBytes: Uint8Array, tags: Record<string, string>): Uint8Array {
   if (Object.keys(tags).length === 0) return flacBytes;
 
+  const keptBlocks: Array<{ start: number; end: number }> = [];
   let off = 4; // skip "fLaC"
-  let lastBlockOff = -1;
+  let audioStart = flacBytes.length;
 
   while (off + 4 <= flacBytes.length) {
     const headerByte = flacBytes[off];
     const blockType = headerByte & 0x7f;
     const dataLen = readUint24BE(flacBytes, off + 1);
+    const isLast = (headerByte & 0x80) !== 0;
 
-    lastBlockOff = off;
-    if ((headerByte & 0x80) !== 0) break; // is_last
-    if (blockType > 6) break; // guard against audio frame territory
+    if (blockType > 6) { audioStart = off; break; } // guard against audio frame territory
 
-    off += 4 + dataLen;
+    const blockEnd = off + 4 + dataLen;
+    if (blockType !== METADATA_TYPE_VORBIS_COMMENT) keptBlocks.push({ start: off, end: blockEnd });
+
+    audioStart = blockEnd;
+    if (isLast) break;
+    off = blockEnd;
   }
 
-  if (lastBlockOff === -1) return flacBytes;
-
-  const lastDataLen = readUint24BE(flacBytes, lastBlockOff + 1);
-  const insertionPoint = lastBlockOff + 4 + lastDataLen;
-
   const commentBlock = buildVorbisCommentBlock(tags, true);
-  const result = new Uint8Array(flacBytes.length + commentBlock.length);
-  result.set(flacBytes, 0);
-  result[lastBlockOff] = result[lastBlockOff] & 0x7f; // clear is_last on previous last block
-  result.copyWithin(insertionPoint + commentBlock.length, insertionPoint, flacBytes.length);
-  result.set(commentBlock, insertionPoint);
+  const keptLen = keptBlocks.reduce((n, b) => n + (b.end - b.start), 0);
+  const result = new Uint8Array(4 + keptLen + commentBlock.length + (flacBytes.length - audioStart));
+
+  result.set(flacBytes.subarray(0, 4), 0); // "fLaC"
+  let woff = 4;
+  for (const b of keptBlocks) {
+    result.set(flacBytes.subarray(b.start, b.end), woff);
+    result[woff] = result[woff] & 0x7f; // clear is_last — the comment block below is now last
+    woff += b.end - b.start;
+  }
+  result.set(commentBlock, woff);
+  woff += commentBlock.length;
+  result.set(flacBytes.subarray(audioStart), woff);
 
   return result;
 }
@@ -258,6 +270,16 @@ export async function createEncoder(
       return injectVorbisComments(flacBytes, tags);
     },
   };
+}
+
+/**
+ * Rewrite an already-encoded FLAC file's Vorbis comments, replacing any that
+ * are already present. Operates on the compressed bitstream directly — no
+ * decode/re-encode — so re-tagging a stored stem for export costs a splice,
+ * not a full PCM round-trip.
+ */
+export function tagFlac(flacBytes: Uint8Array, tags: VorbisTags): Uint8Array {
+  return injectVorbisComments(flacBytes, tags);
 }
 
 /**

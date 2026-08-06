@@ -9,6 +9,7 @@ import { playbackMemoryBytes, exceedsBudget, DESKTOP_MEMORY_BUDGET_BYTES } from 
 import { getMonoPreference, setMonoPreference } from '../playback/monoPreference.ts';
 import { loadSongPeaks } from '../waveform/loadPeaks.ts';
 import { WaveformStack } from '../components/WaveformStack.tsx';
+import { ExportStemsControl } from '../components/ExportStemsControl.tsx';
 import {
   resizeStart,
   resizeEnd,
@@ -563,6 +564,7 @@ export function Player() {
                 );
               })}
             </div>
+            <ExportStemsControl song={song} />
           </>
         )}
       </main>

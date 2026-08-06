@@ -3,6 +3,7 @@ import {
   encodePcm,
   decodeFlac,
   createEncoder,
+  tagFlac,
   SAMPLE_RATE,
   BITS_PER_SAMPLE,
   COMPRESSION_LEVEL,
@@ -125,6 +126,47 @@ describe('FLAC codec', () => {
     it('returns empty tags when none were written', async () => {
       const { tags } = await roundTrip(makeSineFixture());
       expect(Object.keys(tags)).toHaveLength(0);
+    });
+  });
+
+  describe('tagFlac (re-tagging an already-encoded file)', () => {
+    it('overwrites tags already present rather than appending a second block', async () => {
+      const original = await encodePcm(makeSineFixture(), SAMPLE_RATE, { ROLE: 'VOCALS', ID: 'abc' });
+      const retagged = tagFlac(original, { ROLE: 'vocals', SONG_ID: 'abc', SCHEMA_VERSION: '1', TITLE: 'My Song' });
+
+      const { tags } = await decodeFlac(retagged);
+
+      expect(tags['ROLE']).toBe('vocals');
+      expect(tags['SONG_ID']).toBe('abc');
+      expect(tags['SCHEMA_VERSION']).toBe('1');
+      expect(tags['TITLE']).toBe('My Song');
+      // The old ID tag must not survive — a leftover second comment block
+      // would otherwise leak it back in.
+      expect(tags['ID']).toBeUndefined();
+    });
+
+    it('decodes to the same audio as before re-tagging', async () => {
+      const original = await encodePcm(makeSineFixture(), SAMPLE_RATE, { ROLE: 'DRUMS', ID: 'xyz' });
+      const { channels: before } = await decodeFlac(original);
+
+      const retagged = tagFlac(original, { ROLE: 'drums' });
+      const { channels: after } = await decodeFlac(retagged);
+
+      expect(after).toHaveLength(before.length);
+      for (let ch = 0; ch < before.length; ch++) {
+        expect(after[ch].length).toBe(before[ch].length);
+        for (let i = 0; i < before[ch].length; i++) {
+          expect(after[ch][i]).toBe(before[ch][i]);
+        }
+      }
+    });
+
+    it('tags a file that had no prior comment block', async () => {
+      const untagged = await encodePcm(makeSineFixture());
+      const tagged = tagFlac(untagged, { ROLE: 'other' });
+
+      const { tags } = await decodeFlac(tagged);
+      expect(tags['ROLE']).toBe('other');
     });
   });
 
