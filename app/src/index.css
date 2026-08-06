@@ -337,6 +337,26 @@ a {
   cursor: default;
 }
 
+.player-memory {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+
+.player-memory-mono {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.player-memory-warning {
+  font-size: 0.8rem;
+  color: #e0a030;
+  margin: 0;
+}
+
 .player-tempo-readout {
   font-variant-numeric: tabular-nums;
   font-size: 0.85rem;
