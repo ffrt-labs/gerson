@@ -7,7 +7,7 @@
 
 import SignalsmithStretch from 'signalsmith-stretch';
 import type { StretchNode } from 'signalsmith-stretch';
-import type { Role } from '../domain/types.ts';
+import type { LoopRegion, Role } from '../domain/types.ts';
 import { ROLES } from '../domain/types.ts';
 import {
   initialTransportState,
@@ -16,6 +16,7 @@ import {
   pause as pauseState,
   seek as seekState,
   setRate as setRateState,
+  setLoop as setLoopState,
   type ScheduleAnchor,
   type TransportState,
 } from './anchor.ts';
@@ -43,6 +44,14 @@ export interface Transport {
   pause(): void;
   seek(seconds: number): void;
   setRate(rate: number): void;
+  /**
+   * Sets the loop region playback repeats within. `null` disables looping —
+   * sent to every node as an equal loopStart/loopEnd pair, matching
+   * signalsmith-stretch's own disable rule (§5.4). The caller (Player) owns
+   * whether a drawn region is currently enabled; this always reflects the
+   * effective state, never the stored-but-inactive region.
+   */
+  setLoop(region: LoopRegion | null): void;
   setGain(role: Role, value: number): void;
   setMuted(role: Role, muted: boolean): void;
   /**
@@ -116,6 +125,11 @@ export function createTransportEngine(
     },
     setRate(rate) {
       dispatch(setRateState(state, now() + SCHEDULE_LOOKAHEAD_SECONDS, rate));
+    },
+    setLoop(region) {
+      const loopStart = region ? region.startSec : 0;
+      const loopEnd = region ? region.endSec : 0;
+      dispatch(setLoopState(state, now() + SCHEDULE_LOOKAHEAD_SECONDS, loopStart, loopEnd));
     },
     setGain(role, value) {
       desiredGain[role] = value;
