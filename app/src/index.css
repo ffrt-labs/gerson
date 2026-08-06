@@ -343,6 +343,34 @@ a {
   min-width: 3.5rem;
 }
 
+.waveform-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.75rem;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #111;
+}
+
+.waveform-row {
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  color: #6a8caf;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.waveform-row:last-child {
+  border-bottom: none;
+}
+
+.waveform-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 .player-stems {
   display: flex;
   flex-direction: column;

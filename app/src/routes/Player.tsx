@@ -5,6 +5,8 @@ import { getSong } from '../storage/db.ts';
 import { savePractice } from '../library/engine.ts';
 import { createTransport, type Transport } from '../playback/transport.ts';
 import { songStemLoader } from '../playback/loadSong.ts';
+import { loadSongPeaks } from '../waveform/loadPeaks.ts';
+import { WaveformStack } from '../components/WaveformStack.tsx';
 import { ROLES, defaultPracticeState, type PracticeState, type Role, type Song } from '../domain/types.ts';
 
 const ROLE_LABELS: Record<Role, string> = { vocals: 'Vocals', drums: 'Drums', bass: 'Bass', other: 'Other' };
@@ -80,6 +82,7 @@ export function Player() {
   // Solo is a momentary gesture (never persisted) — always off on open.
   const [solo, setSolo] = useState<Record<Role, boolean>>(NO_SOLO);
   const [position, setPosition] = useState(0);
+  const [peaks, setPeaks] = useState<Record<Role, Int8Array> | null>(null);
   const sessionRef = useRef<Session | null>(null);
 
   // A stale result from a previous Song reads as 'loading', not an error
@@ -100,7 +103,7 @@ export function Player() {
 
     const audioContext = new AudioContext();
     createTransport(audioContext, songStemLoader(song))
-      .then(transport => {
+      .then(async transport => {
         if (cancelled) {
           void releaseSession({ transport, audioContext });
           return;
@@ -119,11 +122,22 @@ export function Player() {
         const startAt = song.practice.loop?.startSec ?? 0;
         if (startAt > 0) transport.seek(startAt);
 
+        // Peaks are read only now, not earlier: createTransport just ran
+        // loadSongStem for every Role, and that's the repair path (§3.4)
+        // that guarantees this Song's peaks are valid on disk. Reading
+        // any sooner risks racing that repair's own write.
+        const loadedPeaks = await Promise.all(ROLES.map(role => loadSongPeaks(song, role)));
+        if (cancelled) return;
+
+        const peaksByRole = {} as Record<Role, Int8Array>;
+        ROLES.forEach((role, i) => { peaksByRole[role] = loadedPeaks[i]; });
+
         setPlaying(false);
         setPractice(song.practice);
         setSolo(NO_SOLO);
         setPosition(startAt);
         lastPositionRef.current = startAt;
+        setPeaks(peaksByRole);
         setLoadState({ songId, status: 'ready', error: null });
       })
       .catch((e: unknown) => {
@@ -165,6 +179,13 @@ export function Player() {
     const seconds = Number(seekInput);
     if (Number.isFinite(seconds)) sessionRef.current?.transport.seek(seconds);
   }, [seekInput]);
+
+  // Clicking a waveform seeks — the one unambiguous gesture the four rows
+  // carry (§5.4). The rAF loop below picks up the new position on its next
+  // frame, same as the numeric seek above.
+  const seekToPosition = useCallback((seconds: number) => {
+    sessionRef.current?.transport.seek(seconds);
+  }, []);
 
   // Writes the next Practice state to state and to storage together — the
   // Song's single Practice state is overwritten on every change, never
@@ -273,6 +294,15 @@ export function Player() {
               <span className="player-tempo-readout">{formatRate(practice.tempo)}</span>
               <button onClick={resetRate} disabled={practice.tempo === 1}>Reset to 1×</button>
             </div>
+            {peaks && (
+              <WaveformStack
+                peaks={peaks}
+                stems={practice.stems}
+                durationSec={song.durationSec}
+                position={position}
+                onSeek={seekToPosition}
+              />
+            )}
             <div className="player-stems">
               {ROLES.map(role => {
                 const stem = practice.stems[role];
