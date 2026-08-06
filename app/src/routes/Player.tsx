@@ -232,60 +232,57 @@ export function Player() {
 
   const resetRate = useCallback(() => changeRate(1), [changeRate]);
 
-  // The one path every loop mutation funnels through: writes the region
-  // (and, when the caller asks, force-enables looping — dragging in the
-  // lane or setting an edge from the playhead are both a clear signal of
-  // intent to loop, unlike typing an exact number into an already-set-up
-  // region) to Practice state, and pushes the *effective* region (null
-  // unless enabled) to the transport in the same call.
-  const commitLoop = useCallback((region: LoopRegion, options?: { enable?: boolean }) => {
-    const loopEnabled = options?.enable ? true : practice.loopEnabled;
-    const next: PracticeState = { ...practice, loop: region, loopEnabled };
+  // The one path every loop mutation funnels through — toggling on/off
+  // included — writing whichever of `loop`/`loopEnabled` the caller passes
+  // to Practice state, and pushing the *effective* region (null unless
+  // enabled) to the transport in the same call.
+  const commitLoop = useCallback((patch: Partial<Pick<PracticeState, 'loop' | 'loopEnabled'>>) => {
+    const next: PracticeState = { ...practice, ...patch };
     sessionRef.current?.transport.setLoop(effectiveLoop(next));
     persistPractice(next);
   }, [practice, persistPractice]);
 
   // The only handler the loop lane's drag calls — create, resize, and move
-  // all land here (§5.4).
+  // all land here (§5.4). Force-enables looping: dragging in the lane is a
+  // clear signal of intent to loop, unlike typing an exact number into an
+  // already-set-up region (the numeric edits below leave enabled alone).
   const changeLoop = useCallback((region: LoopRegion) => {
-    commitLoop(region, { enable: true });
+    commitLoop({ loop: region, loopEnabled: true });
   }, [commitLoop]);
 
   const toggleLoop = useCallback(() => {
-    const loopEnabled = !practice.loopEnabled;
-    const next: PracticeState = { ...practice, loopEnabled };
-    sessionRef.current?.transport.setLoop(effectiveLoop(next));
-    persistPractice(next);
-  }, [practice, persistPractice]);
+    commitLoop({ loopEnabled: !practice.loopEnabled });
+  }, [commitLoop, practice.loopEnabled]);
 
   // Set-loop-start/end from the playhead (§5.4's load-bearing precision
   // path) — placing an edge by ear rather than by eye. With no region yet,
-  // this seeds one running to the nearest song boundary.
+  // this seeds one running to the nearest song boundary. Also
+  // force-enables, same reasoning as changeLoop above.
   const setLoopStartFromPlayhead = useCallback(() => {
     if (!song) return;
-    commitLoop(setStartFromPlayhead(practice.loop, position, song.durationSec), { enable: true });
+    commitLoop({ loop: setStartFromPlayhead(practice.loop, position, song.durationSec), loopEnabled: true });
   }, [song, practice.loop, position, commitLoop]);
 
   const setLoopEndFromPlayhead = useCallback(() => {
     if (!song) return;
-    commitLoop(setEndFromPlayhead(practice.loop, position, song.durationSec), { enable: true });
+    commitLoop({ loop: setEndFromPlayhead(practice.loop, position, song.durationSec), loopEnabled: true });
   }, [song, practice.loop, position, commitLoop]);
 
   // The three numeric readouts (start/end/length), typed directly — leaves
   // the enabled state exactly as it was, unlike drag/set-from-playhead.
   const editLoopStart = useCallback((value: number) => {
     if (!practice.loop || !Number.isFinite(value)) return;
-    commitLoop(resizeStart(practice.loop, value));
+    commitLoop({ loop: resizeStart(practice.loop, value) });
   }, [practice.loop, commitLoop]);
 
   const editLoopEnd = useCallback((value: number) => {
     if (!practice.loop || !song || !Number.isFinite(value)) return;
-    commitLoop(resizeEnd(practice.loop, value, song.durationSec));
+    commitLoop({ loop: resizeEnd(practice.loop, value, song.durationSec) });
   }, [practice.loop, song, commitLoop]);
 
   const editLoopLength = useCallback((value: number) => {
     if (!practice.loop || !song || !Number.isFinite(value)) return;
-    commitLoop(setLength(practice.loop, value, song.durationSec));
+    commitLoop({ loop: setLength(practice.loop, value, song.durationSec) });
   }, [practice.loop, song, commitLoop]);
 
   // `←`/`→` nudge whichever readout last received focus (§5.4/§10.3's
@@ -294,9 +291,9 @@ export function Player() {
   const nudgeFocusedLoopField = useCallback((deltaSec: number) => {
     if (!practice.loop || !focusedLoopField || !song) return;
     const region = practice.loop;
-    if (focusedLoopField === 'start') commitLoop(resizeStart(region, region.startSec + deltaSec));
-    else if (focusedLoopField === 'end') commitLoop(resizeEnd(region, region.endSec + deltaSec, song.durationSec));
-    else commitLoop(setLength(region, region.endSec - region.startSec + deltaSec, song.durationSec));
+    if (focusedLoopField === 'start') commitLoop({ loop: resizeStart(region, region.startSec + deltaSec) });
+    else if (focusedLoopField === 'end') commitLoop({ loop: resizeEnd(region, region.endSec + deltaSec, song.durationSec) });
+    else commitLoop({ loop: setLength(region, region.endSec - region.startSec + deltaSec, song.durationSec) });
   }, [practice.loop, focusedLoopField, song, commitLoop]);
 
   const changeStemGain = useCallback((role: Role, value: number) => {

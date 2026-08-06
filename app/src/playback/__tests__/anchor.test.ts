@@ -186,6 +186,20 @@ describe('setLoop', () => {
     expect(inputAt(state, 24)).toBe(14);
     expect(inputAt(state, 999)).toBe(14); // stays frozen, still wrapped
   });
+
+  // §4.6/06's acceptance bar: wrap stays clean across several positions and
+  // rates, including non-integer boundaries — not just the rate-1, round-
+  // number cases above.
+  it.each([
+    { rate: 2, loopStart: 5, loopEnd: 8, atTime: 6, expected: 6 }, // one wrap, integer bounds
+    { rate: 0.5, loopStart: 12.5, loopEnd: 16.25, atTime: 40, expected: 12.5 }, // non-integer boundary, lands exactly on loopStart
+    { rate: 1.75, loopStart: 2.2, loopEnd: 9.7, atTime: 10, expected: 2.5 }, // non-integer boundary, mid-loop
+    { rate: 3, loopStart: 0, loopEnd: 2, atTime: 7, expected: 1 }, // several iterations at a fast rate
+  ])('rate $rate, loop [$loopStart, $loopEnd]: wraps to $expected at t=$atTime', ({ rate, loopStart, loopEnd, atTime, expected }) => {
+    let state = play(initialTransportState, 0, rate);
+    state = setLoop(state, 0, loopStart, loopEnd);
+    expect(inputAt(state, atTime)).toBeCloseTo(expected, 9);
+  });
 });
 
 describe('sync — identical state transitions never diverge across independent lanes', () => {
