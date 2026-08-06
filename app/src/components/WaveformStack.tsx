@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ROLES, type Role } from '../domain/types.ts';
+import { ROLES, type PracticeState, type Role } from '../domain/types.ts';
 import { useElementWidth } from '../hooks/useElementWidth.ts';
 import { WaveformRow } from './WaveformRow.tsx';
 import { WaveformOverlay } from './WaveformOverlay.tsx';
@@ -8,6 +8,7 @@ export const WAVEFORM_ROW_HEIGHT_PX = 64;
 
 interface WaveformStackProps {
   peaks: Record<Role, Int8Array> | null;
+  stems: PracticeState['stems'];
   durationSec: number;
   position: number;
   onSeek: (seconds: number) => void;
@@ -17,7 +18,7 @@ interface WaveformStackProps {
 // (§5.3), stacked flush so the overlay's playhead line stays pixel-aligned
 // with every row. Fit-the-song only — the viewport is exactly the
 // container's width; zoom and pan are #28.
-export function WaveformStack({ peaks, durationSec, position, onSeek }: WaveformStackProps) {
+export function WaveformStack({ peaks, stems, durationSec, position, onSeek }: WaveformStackProps) {
   const [containerRef, widthPx] = useElementWidth<HTMLDivElement>();
   const [dpr] = useState(() => window.devicePixelRatio || 1);
   const heightPx = WAVEFORM_ROW_HEIGHT_PX * ROLES.length;
@@ -29,6 +30,7 @@ export function WaveformStack({ peaks, durationSec, position, onSeek }: Waveform
           key={role}
           role={role}
           peaks={peaks?.[role] ?? null}
+          muted={stems[role].muted}
           durationSec={durationSec}
           widthPx={widthPx}
           heightPx={WAVEFORM_ROW_HEIGHT_PX}

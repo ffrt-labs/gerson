@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef } from 'react';
 import { drawPlayhead } from '../waveform/overlay.ts';
 import { playheadX } from '../waveform/geometry.ts';
+import { sizeCanvas } from '../waveform/sizeCanvas.ts';
 
 interface WaveformOverlayProps {
   position: number;
@@ -28,11 +29,8 @@ export const WaveformOverlay = memo(function WaveformOverlay({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || physicalWidth <= 0 || physicalHeight <= 0) return;
-    canvas.width = physicalWidth;
-    canvas.height = physicalHeight;
-
-    const ctx = canvas.getContext('2d');
+    if (!canvas) return;
+    const ctx = sizeCanvas(canvas, physicalWidth, physicalHeight);
     if (!ctx) return;
     ctx.strokeStyle = '#d9a441';
     ctx.lineWidth = Math.max(1, dpr);

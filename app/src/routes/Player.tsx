@@ -129,12 +129,15 @@ export function Player() {
         const loadedPeaks = await Promise.all(ROLES.map(role => loadSongPeaks(song, role)));
         if (cancelled) return;
 
+        const peaksByRole = {} as Record<Role, Int8Array>;
+        ROLES.forEach((role, i) => { peaksByRole[role] = loadedPeaks[i]; });
+
         setPlaying(false);
         setPractice(song.practice);
         setSolo(NO_SOLO);
         setPosition(startAt);
         lastPositionRef.current = startAt;
-        setPeaks(Object.fromEntries(ROLES.map((role, i) => [role, loadedPeaks[i]])) as Record<Role, Int8Array>);
+        setPeaks(peaksByRole);
         setLoadState({ songId, status: 'ready', error: null });
       })
       .catch((e: unknown) => {
@@ -294,6 +297,7 @@ export function Player() {
             {peaks && (
               <WaveformStack
                 peaks={peaks}
+                stems={practice.stems}
                 durationSec={song.durationSec}
                 position={position}
                 onSeek={seekToPosition}
