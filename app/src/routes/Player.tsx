@@ -296,9 +296,11 @@ export function Player() {
             </div>
             {peaks && (
               <WaveformStack
+                key={song.id}
                 peaks={peaks}
                 stems={practice.stems}
                 durationSec={song.durationSec}
+                sampleRate={song.sampleRate}
                 position={position}
                 onSeek={seekToPosition}
               />
