@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { ROLES, type PracticeState, type Role } from '../domain/types.ts';
+import { ROLES, type LoopRegion, type PracticeState, type Role } from '../domain/types.ts';
 import { useElementWidth } from '../hooks/useElementWidth.ts';
 import { WaveformRow } from './WaveformRow.tsx';
 import { WaveformOverlay } from './WaveformOverlay.tsx';
+import { LoopLane } from './LoopLane.tsx';
 import {
   type Viewport,
   fitTheSongViewport,
@@ -37,6 +38,9 @@ interface WaveformStackProps {
   sampleRate: number;
   position: number;
   onSeek: (seconds: number) => void;
+  loop: LoopRegion | null;
+  loopEnabled: boolean;
+  onChangeLoop: (region: LoopRegion) => void;
 }
 
 interface DragState {
@@ -53,7 +57,17 @@ interface DragState {
 // or a trackpad pinch zooms centered on the pointer, plain wheel/trackpad
 // scroll pans, and click-drag on the waveform pans (a plain click still
 // seeks — the one gesture §5.4 reserves for the waveform rows themselves).
-export function WaveformStack({ peaks, stems, durationSec, sampleRate, position, onSeek }: WaveformStackProps) {
+export function WaveformStack({
+  peaks,
+  stems,
+  durationSec,
+  sampleRate,
+  position,
+  onSeek,
+  loop,
+  loopEnabled,
+  onChangeLoop,
+}: WaveformStackProps) {
   const [containerRef, widthPx] = useElementWidth<HTMLDivElement>();
   const [dpr] = useState(() => window.devicePixelRatio || 1);
   const heightPx = WAVEFORM_ROW_HEIGHT_PX * ROLES.length;
@@ -194,6 +208,19 @@ export function WaveformStack({ peaks, stems, durationSec, sampleRate, position,
       >
         Follow
       </button>
+      {/* Sibling of .waveform-stack, not nested inside it — the overlay
+          below is absolutely positioned with inset:0 against .waveform-stack
+          specifically, so the lane must stay outside that box or the
+          shading canvas would stretch up to cover it too. */}
+      <LoopLane
+        loop={loop}
+        loopEnabled={loopEnabled}
+        viewport={viewport}
+        widthPx={widthPx}
+        durationSec={durationSec}
+        dpr={dpr}
+        onChangeLoop={onChangeLoop}
+      />
       <div
         className="waveform-stack"
         ref={containerRef}
@@ -220,6 +247,8 @@ export function WaveformStack({ peaks, stems, durationSec, sampleRate, position,
           widthPx={widthPx}
           heightPx={heightPx}
           dpr={dpr}
+          loop={loop}
+          loopEnabled={loopEnabled}
         />
       </div>
     </div>

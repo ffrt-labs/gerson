@@ -371,6 +371,22 @@ a {
   color: #111;
 }
 
+.loop-lane {
+  position: relative;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #161616;
+  cursor: crosshair;
+  user-select: none;
+  touch-action: none;
+  margin-bottom: 2px;
+}
+
+.loop-lane-canvas {
+  display: block;
+  width: 100%;
+}
+
 .waveform-stack {
   position: relative;
   display: flex;
@@ -402,6 +418,70 @@ a {
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+
+.player-loop {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.player-loop-toggle {
+  background: #222;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.75rem;
+}
+
+.player-loop-toggle:hover {
+  background: #2a2a2a;
+}
+
+.player-loop-toggle--active {
+  background: #d9a441;
+  border-color: #d9a441;
+  color: #111;
+}
+
+.player-loop-field {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.player-loop-field input {
+  background: #111;
+  border: 1px solid #555;
+  border-radius: 3px;
+  color: inherit;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.4rem;
+  width: 5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.player-loop-field input:disabled {
+  opacity: 0.4;
+}
+
+.player-loop-action {
+  background: #222;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.75rem;
+}
+
+.player-loop-action:hover {
+  background: #2a2a2a;
 }
 
 .player-stems {

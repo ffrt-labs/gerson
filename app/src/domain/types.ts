@@ -27,7 +27,9 @@ export interface LoopRegion {
 
 export interface PracticeState {
   tempo: number;               // 0.5–2.0, default 1
-  loop: LoopRegion | null;     // null = no active loop region
+  loop: LoopRegion | null;     // null = no region drawn yet
+  loopEnabled: boolean;        // whether playback repeats within `loop` — independent
+                                // of the region itself, so toggling off doesn't lose it
   stems: Record<Role, StemState>;
 }
 
@@ -68,6 +70,7 @@ export function defaultPracticeState(): PracticeState {
   return {
     tempo: 1,
     loop: null,
+    loopEnabled: false,
     stems: {
       vocals: { gain: 1, muted: false },
       drums:  { gain: 1, muted: false },

@@ -14,7 +14,7 @@ import type { ScheduleAnchor } from '../anchor.ts';
 type MutableAnchor = { -readonly [K in keyof Required<ScheduleAnchor>]: Required<ScheduleAnchor>[K] };
 
 class SimulatedStretchNode implements StretchLike {
-  private timeMap: MutableAnchor[] = [{ output: 0, outputTime: 0, active: false, rate: 1, input: 0 }];
+  private timeMap: MutableAnchor[] = [{ output: 0, outputTime: 0, active: false, rate: 1, input: 0, loopStart: 0, loopEnd: 0 }];
   readonly scheduleCalls: ScheduleAnchor[] = [];
 
   configure(): void {}
@@ -188,6 +188,45 @@ describe('footgun 2 — input sent on seek only', () => {
     expect(calls[1].input).toBeUndefined(); // setRate
     expect(calls[2].input).toBeUndefined(); // pause
     expect(calls[3].input).toBe(42); // seek
+  });
+});
+
+describe('setLoop — one anchor to every node, identical, disabled by equal start/end', () => {
+  it('broadcasts the same loopStart/loopEnd to all four nodes', () => {
+    const nodes = fourNodes();
+    const gains = fourGains();
+    const engine = createTransportEngine(nodes, gains, () => 0);
+
+    engine.setLoop({ startSec: 10, endSec: 20 });
+
+    for (const role of ROLES) {
+      const call = nodes[role].scheduleCalls.at(-1)!;
+      expect(call.loopStart).toBe(10);
+      expect(call.loopEnd).toBe(20);
+    }
+    const anchors = ROLES.map(role => nodes[role].scheduleCalls.at(-1));
+    expect(anchors).toEqual(Array(ROLES.length).fill(anchors[0]));
+  });
+
+  it('null sends an equal loopStart/loopEnd pair — the library\'s own disable rule', () => {
+    const nodes = fourNodes();
+    const gains = fourGains();
+    const engine = createTransportEngine(nodes, gains, () => 0);
+
+    engine.setLoop({ startSec: 10, endSec: 20 });
+    engine.setLoop(null);
+
+    const call = nodes.vocals.scheduleCalls.at(-1)!;
+    expect(call.loopStart).toBe(call.loopEnd);
+  });
+
+  it('is not a seek — carries no input field', () => {
+    const nodes = fourNodes();
+    const gains = fourGains();
+    const engine = createTransportEngine(nodes, gains, () => 0);
+
+    engine.setLoop({ startSec: 10, endSec: 20 });
+    expect(nodes.vocals.scheduleCalls.at(-1)!.input).toBeUndefined();
   });
 });
 

@@ -6,6 +6,7 @@ import {
   pause,
   seek,
   setRate,
+  setLoop,
   type TransportState,
 } from '../anchor.ts';
 
@@ -99,6 +100,105 @@ describe('pause and resume', () => {
     const resumed = play(paused, 8, 1);
     expect(inputAt(resumed, 8)).toBe(6);
     expect(inputAt(resumed, 9)).toBe(7);
+  });
+});
+
+describe('loop wrap — disabled by default', () => {
+  it('never wraps when loopStart equals loopEnd (the initial 0,0 state)', () => {
+    const state = play(initialTransportState, 0, 1);
+    expect(inputAt(state, 1000)).toBe(1000);
+  });
+});
+
+describe('setLoop', () => {
+  it('carries output/outputTime identically (footgun 1) and sends no input field (footgun 2)', () => {
+    const played = play(initialTransportState, 0, 1);
+    const looped = setLoop(played, 5, 10, 14);
+    expect(looped.anchor.output).toBe(looped.anchor.outputTime);
+    expect(looped.anchor.input).toBeUndefined();
+  });
+
+  it('does not itself move the playhead — only future wrap behaviour changes', () => {
+    const played = play(initialTransportState, 0, 1);
+    const before = inputAt(played, 5);
+    const looped = setLoop(played, 5, 100, 200); // well outside current position
+    expect(inputAt(looped, 5)).toBe(before);
+  });
+
+  it('a position before loopEnd is unaffected', () => {
+    let state = play(initialTransportState, 0, 1);
+    state = setLoop(state, 0, 10, 20);
+    expect(inputAt(state, 15)).toBe(15); // 15 < loopEnd(20)
+  });
+
+  it('wraps to loopStart the instant position reaches loopEnd', () => {
+    let state = play(initialTransportState, 0, 1);
+    state = setLoop(state, 0, 10, 20);
+    expect(inputAt(state, 20)).toBe(10);
+    expect(inputAt(state, 22)).toBe(12);
+  });
+
+  it('wraps repeatedly across many loop iterations, not just the first', () => {
+    let state = play(initialTransportState, 0, 1);
+    state = setLoop(state, 0, 10, 20); // 10s loop length
+    // 20 + 10*10.5 = 125 -> 105 seconds past loopStart's original entry;
+    // past = 125 - 20 = 105; 105 % 10 = 5 -> wraps to loopStart + 5 = 15.
+    expect(inputAt(state, 125)).toBeCloseTo(15, 10);
+  });
+
+  it('handles a non-integer loop length cleanly, including a non-integer boundary', () => {
+    let state = play(initialTransportState, 0, 1);
+    state = setLoop(state, 0, 10.25, 17.75); // 7.5s length
+    // past = 30 - 17.75 = 12.25; 12.25 % 7.5 = 4.75 -> 10.25 + 4.75 = 15
+    expect(inputAt(state, 30)).toBeCloseTo(15, 10);
+  });
+
+  it('is carried forward across a subsequent play/pause/seek/setRate, not reset to disabled', () => {
+    let state = play(initialTransportState, 0, 1);
+    state = setLoop(state, 0, 10, 20);
+    state = setRate(state, 1, 2);
+    state = pause(state, 2);
+    state = play(state, 3, 1);
+    expect(state.anchor.loopStart).toBe(10);
+    expect(state.anchor.loopEnd).toBe(20);
+    expect(inputAt(state, 100)).toBe(10); // still wrapping: raw 100 -> past 80 -> 80%10=0 -> loopStart+0
+  });
+
+  it('a seek while looping resolves through the wrap immediately', () => {
+    let state = play(initialTransportState, 0, 1);
+    state = setLoop(state, 0, 10, 20);
+    state = seek(state, 5, 25); // seek target itself is past loopEnd
+    expect(inputAt(state, 5)).toBe(15); // 25 wraps to loopStart(10) + (25-20)=5 -> 15
+  });
+
+  it('disabling the loop (equal start/end) stops future wrapping from wherever position sits', () => {
+    let state = play(initialTransportState, 0, 1);
+    state = setLoop(state, 0, 10, 20);
+    state = setLoop(state, 25, 0, 0); // disable at t=25 — position was wrapped to 15
+    expect(inputAt(state, 25)).toBe(15);
+    expect(inputAt(state, 35)).toBe(25); // grows linearly, no more wrap
+  });
+
+  it('applies the same wrap to a frozen (paused) position', () => {
+    let state = play(initialTransportState, 0, 1);
+    state = setLoop(state, 0, 10, 20);
+    state = pause(state, 24); // frozen resolvedInput lands past loopEnd pre-wrap
+    expect(inputAt(state, 24)).toBe(14);
+    expect(inputAt(state, 999)).toBe(14); // stays frozen, still wrapped
+  });
+
+  // §4.6/06's acceptance bar: wrap stays clean across several positions and
+  // rates, including non-integer boundaries — not just the rate-1, round-
+  // number cases above.
+  it.each([
+    { rate: 2, loopStart: 5, loopEnd: 8, atTime: 6, expected: 6 }, // one wrap, integer bounds
+    { rate: 0.5, loopStart: 12.5, loopEnd: 16.25, atTime: 40, expected: 12.5 }, // non-integer boundary, lands exactly on loopStart
+    { rate: 1.75, loopStart: 2.2, loopEnd: 9.7, atTime: 10, expected: 2.5 }, // non-integer boundary, mid-loop
+    { rate: 3, loopStart: 0, loopEnd: 2, atTime: 7, expected: 1 }, // several iterations at a fast rate
+  ])('rate $rate, loop [$loopStart, $loopEnd]: wraps to $expected at t=$atTime', ({ rate, loopStart, loopEnd, atTime, expected }) => {
+    let state = play(initialTransportState, 0, rate);
+    state = setLoop(state, 0, loopStart, loopEnd);
+    expect(inputAt(state, atTime)).toBeCloseTo(expected, 9);
   });
 });
 

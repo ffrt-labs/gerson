@@ -7,7 +7,14 @@ import { createTransport, type Transport } from '../playback/transport.ts';
 import { songStemLoader } from '../playback/loadSong.ts';
 import { loadSongPeaks } from '../waveform/loadPeaks.ts';
 import { WaveformStack } from '../components/WaveformStack.tsx';
-import { ROLES, defaultPracticeState, type PracticeState, type Role, type Song } from '../domain/types.ts';
+import {
+  resizeStart,
+  resizeEnd,
+  setLength,
+  setStartFromPlayhead,
+  setEndFromPlayhead,
+} from '../waveform/loop.ts';
+import { ROLES, defaultPracticeState, type LoopRegion, type PracticeState, type Role, type Song } from '../domain/types.ts';
 
 const ROLE_LABELS: Record<Role, string> = { vocals: 'Vocals', drums: 'Drums', bass: 'Bass', other: 'Other' };
 const NO_SOLO: Record<Role, boolean> = { vocals: false, drums: false, bass: false, other: false };
@@ -43,6 +50,21 @@ const MAX_RATE = 2;
 const MIN_GAIN = 0;
 const MAX_GAIN = 1.5;
 
+// Applied per arrow-key press to whichever loop readout is focused (§5.4:
+// "a numeric readout of start / end / length, nudgeable"). Fine enough to
+// place an edge precisely by ear without a beat grid; coarser than that
+// would defeat the point of a nudge.
+const NUDGE_STEP_SEC = 0.01;
+
+type LoopField = 'start' | 'end' | 'length';
+
+// The region only actually loops when both a region is drawn and the
+// toggle is on (§5.4 acceptance: toggling off must not lose the region) —
+// this is what Transport.setLoop and the Song's saved practice both need.
+function effectiveLoop(practice: PracticeState): LoopRegion | null {
+  return practice.loopEnabled ? practice.loop : null;
+}
+
 function formatRate(rate: number): string {
   return `${rate.toFixed(2)}×`;
 }
@@ -53,6 +75,10 @@ function formatGain(gain: number): string {
 
 function formatPosition(seconds: number): string {
   return `${Math.max(0, seconds).toFixed(2)}s`;
+}
+
+function formatLoopSec(seconds: number): string {
+  return seconds.toFixed(2);
 }
 
 export function Player() {
@@ -83,6 +109,9 @@ export function Player() {
   const [solo, setSolo] = useState<Record<Role, boolean>>(NO_SOLO);
   const [position, setPosition] = useState(0);
   const [peaks, setPeaks] = useState<Record<Role, Int8Array> | null>(null);
+  // Which loop readout the arrow keys nudge — set by the three inputs'
+  // own onFocus/onBlur, not persisted (a UI-only cursor, not Practice state).
+  const [focusedLoopField, setFocusedLoopField] = useState<LoopField | null>(null);
   const sessionRef = useRef<Session | null>(null);
 
   // A stale result from a previous Song reads as 'loading', not an error
@@ -119,6 +148,7 @@ export function Player() {
           transport.setGain(role, song.practice.stems[role].gain);
           transport.setMuted(role, song.practice.stems[role].muted);
         }
+        transport.setLoop(effectiveLoop(song.practice));
         const startAt = song.practice.loop?.startSec ?? 0;
         if (startAt > 0) transport.seek(startAt);
 
@@ -202,6 +232,70 @@ export function Player() {
 
   const resetRate = useCallback(() => changeRate(1), [changeRate]);
 
+  // The one path every loop mutation funnels through — toggling on/off
+  // included — writing whichever of `loop`/`loopEnabled` the caller passes
+  // to Practice state, and pushing the *effective* region (null unless
+  // enabled) to the transport in the same call.
+  const commitLoop = useCallback((patch: Partial<Pick<PracticeState, 'loop' | 'loopEnabled'>>) => {
+    const next: PracticeState = { ...practice, ...patch };
+    sessionRef.current?.transport.setLoop(effectiveLoop(next));
+    persistPractice(next);
+  }, [practice, persistPractice]);
+
+  // The only handler the loop lane's drag calls — create, resize, and move
+  // all land here (§5.4). Force-enables looping: dragging in the lane is a
+  // clear signal of intent to loop, unlike typing an exact number into an
+  // already-set-up region (the numeric edits below leave enabled alone).
+  const changeLoop = useCallback((region: LoopRegion) => {
+    commitLoop({ loop: region, loopEnabled: true });
+  }, [commitLoop]);
+
+  const toggleLoop = useCallback(() => {
+    commitLoop({ loopEnabled: !practice.loopEnabled });
+  }, [commitLoop, practice.loopEnabled]);
+
+  // Set-loop-start/end from the playhead (§5.4's load-bearing precision
+  // path) — placing an edge by ear rather than by eye. With no region yet,
+  // this seeds one running to the nearest song boundary. Also
+  // force-enables, same reasoning as changeLoop above.
+  const setLoopStartFromPlayhead = useCallback(() => {
+    if (!song) return;
+    commitLoop({ loop: setStartFromPlayhead(practice.loop, position, song.durationSec), loopEnabled: true });
+  }, [song, practice.loop, position, commitLoop]);
+
+  const setLoopEndFromPlayhead = useCallback(() => {
+    if (!song) return;
+    commitLoop({ loop: setEndFromPlayhead(practice.loop, position, song.durationSec), loopEnabled: true });
+  }, [song, practice.loop, position, commitLoop]);
+
+  // The three numeric readouts (start/end/length), typed directly — leaves
+  // the enabled state exactly as it was, unlike drag/set-from-playhead.
+  const editLoopStart = useCallback((value: number) => {
+    if (!practice.loop || !Number.isFinite(value)) return;
+    commitLoop({ loop: resizeStart(practice.loop, value) });
+  }, [practice.loop, commitLoop]);
+
+  const editLoopEnd = useCallback((value: number) => {
+    if (!practice.loop || !song || !Number.isFinite(value)) return;
+    commitLoop({ loop: resizeEnd(practice.loop, value, song.durationSec) });
+  }, [practice.loop, song, commitLoop]);
+
+  const editLoopLength = useCallback((value: number) => {
+    if (!practice.loop || !song || !Number.isFinite(value)) return;
+    commitLoop({ loop: setLength(practice.loop, value, song.durationSec) });
+  }, [practice.loop, song, commitLoop]);
+
+  // `←`/`→` nudge whichever readout last received focus (§5.4/§10.3's
+  // keyboard table) — a no-op with no region or no focused field, since
+  // there's nothing to nudge.
+  const nudgeFocusedLoopField = useCallback((deltaSec: number) => {
+    if (!practice.loop || !focusedLoopField || !song) return;
+    const region = practice.loop;
+    if (focusedLoopField === 'start') commitLoop({ loop: resizeStart(region, region.startSec + deltaSec) });
+    else if (focusedLoopField === 'end') commitLoop({ loop: resizeEnd(region, region.endSec + deltaSec, song.durationSec) });
+    else commitLoop({ loop: setLength(region, region.endSec - region.startSec + deltaSec, song.durationSec) });
+  }, [practice.loop, focusedLoopField, song, commitLoop]);
+
   const changeStemGain = useCallback((role: Role, value: number) => {
     sessionRef.current?.transport.setGain(role, value);
     persistPractice(withStemPatch(practice, role, { gain: value }));
@@ -247,6 +341,40 @@ export function Player() {
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, []);
+
+  // Keyboard shortcuts (§5.4/§10.3) — set-from-playhead is load-bearing,
+  // not a power-user extra, so it earns real bindings alongside transport
+  // basics. Left/right nudge whichever loop readout is focused; every other
+  // binding is ignored while focus sits in a text-entry control so typing
+  // in the seek box (or any future free-text field) isn't hijacked.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (!focusedLoopField) return;
+        e.preventDefault();
+        nudgeFocusedLoopField(e.key === 'ArrowLeft' ? -NUDGE_STEP_SEC : NUDGE_STEP_SEC);
+        return;
+      }
+
+      const target = e.target;
+      const isTextEntry = target instanceof HTMLElement
+        && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
+      if (isTextEntry) return;
+
+      if (e.key === ' ') {
+        e.preventDefault();
+        if (playing) pause(); else play();
+      } else if (e.key === '[') {
+        setLoopStartFromPlayhead();
+      } else if (e.key === ']') {
+        setLoopEndFromPlayhead();
+      } else if (e.key.toLowerCase() === 'l') {
+        toggleLoop();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [focusedLoopField, nudgeFocusedLoopField, playing, play, pause, setLoopStartFromPlayhead, setLoopEndFromPlayhead, toggleLoop]);
 
   return (
     <div className="surface">
@@ -303,8 +431,59 @@ export function Player() {
                 sampleRate={song.sampleRate}
                 position={position}
                 onSeek={seekToPosition}
+                loop={practice.loop}
+                loopEnabled={practice.loopEnabled}
+                onChangeLoop={changeLoop}
               />
             )}
+            <div className="player-loop">
+              <button
+                type="button"
+                className={practice.loopEnabled ? 'player-loop-toggle player-loop-toggle--active' : 'player-loop-toggle'}
+                aria-pressed={practice.loopEnabled}
+                onClick={toggleLoop}
+              >
+                Loop
+              </button>
+              <label className="player-loop-field">
+                Start
+                <input
+                  type="number"
+                  step={0.01}
+                  value={practice.loop ? formatLoopSec(practice.loop.startSec) : ''}
+                  disabled={!practice.loop}
+                  onChange={e => editLoopStart(Number(e.target.value))}
+                  onFocus={() => setFocusedLoopField('start')}
+                  onBlur={() => setFocusedLoopField(f => (f === 'start' ? null : f))}
+                />
+              </label>
+              <button type="button" className="player-loop-action" onClick={setLoopStartFromPlayhead}>Set start</button>
+              <label className="player-loop-field">
+                End
+                <input
+                  type="number"
+                  step={0.01}
+                  value={practice.loop ? formatLoopSec(practice.loop.endSec) : ''}
+                  disabled={!practice.loop}
+                  onChange={e => editLoopEnd(Number(e.target.value))}
+                  onFocus={() => setFocusedLoopField('end')}
+                  onBlur={() => setFocusedLoopField(f => (f === 'end' ? null : f))}
+                />
+              </label>
+              <button type="button" className="player-loop-action" onClick={setLoopEndFromPlayhead}>Set end</button>
+              <label className="player-loop-field">
+                Length
+                <input
+                  type="number"
+                  step={0.01}
+                  value={practice.loop ? formatLoopSec(practice.loop.endSec - practice.loop.startSec) : ''}
+                  disabled={!practice.loop}
+                  onChange={e => editLoopLength(Number(e.target.value))}
+                  onFocus={() => setFocusedLoopField('length')}
+                  onBlur={() => setFocusedLoopField(f => (f === 'length' ? null : f))}
+                />
+              </label>
+            </div>
             <div className="player-stems">
               {ROLES.map(role => {
                 const stem = practice.stems[role];

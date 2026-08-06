@@ -7,11 +7,13 @@ function fakeCtx(): Canvas2DLike & { calls: string[] } {
   const calls: string[] = [];
   return {
     calls,
+    fillStyle: '',
     clearRect: vi.fn((x, y, w, h) => calls.push(`clearRect:${x},${y},${w},${h}`)),
     beginPath: vi.fn(() => calls.push('beginPath')),
     moveTo: vi.fn((x, y) => calls.push(`moveTo:${x},${y}`)),
     lineTo: vi.fn((x, y) => calls.push(`lineTo:${x},${y}`)),
     stroke: vi.fn(() => calls.push('stroke')),
+    fillRect: vi.fn((x, y, w, h) => calls.push(`fillRect:${x},${y},${w},${h}`)),
   };
 }
 
