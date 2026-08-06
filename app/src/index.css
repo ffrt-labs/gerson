@@ -343,20 +343,53 @@ a {
   min-width: 3.5rem;
 }
 
+.waveform-controls {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.75rem;
+}
+
+.waveform-follow {
+  align-self: flex-start;
+  background: #222;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
+  padding: 0.3rem 0.75rem;
+}
+
+.waveform-follow:hover {
+  background: #2a2a2a;
+}
+
+.waveform-follow--active {
+  background: #d9a441;
+  border-color: #d9a441;
+  color: #111;
+}
+
 .waveform-stack {
   position: relative;
   display: flex;
   flex-direction: column;
-  margin-top: 0.75rem;
   border-radius: 4px;
   overflow: hidden;
   background: #111;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.waveform-stack:active {
+  cursor: grabbing;
 }
 
 .waveform-row {
   display: block;
   width: 100%;
-  cursor: pointer;
   color: #6a8caf;
   border-bottom: 1px solid #1a1a1a;
 }
