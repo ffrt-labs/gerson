@@ -8,12 +8,18 @@
  * missing or stale relative to the stem it describes. Repairing here, on
  * open, means that costs seconds — a recompute from the decoded PCM already
  * in hand — rather than the Song.
+ *
+ * Also owns the mono override's downmix (§4.5): applied after decode and
+ * peaks repair (which always need the full stereo signal) and before the
+ * buffers are handed off to the stretcher — stored stems stay stereo FLAC
+ * regardless of the caller's `mono` flag.
  */
 
 import type { Role, Song } from '../domain/types.ts';
 import type { StemBuffers, StemLoader } from './transport.ts';
 import { decodeFlac } from '../codec/flac.ts';
 import { computePeaks, PEAKS_SAMPLES_PER_PIXEL } from '../separation/peaks.ts';
+import { downmixToMono } from './downmix.ts';
 import { readStem, readPeaks, writePeaks, isNotFoundError } from '../storage/opfs.ts';
 
 export interface LoadSongStemDeps {
@@ -37,11 +43,13 @@ export function peaksNeedRepair(existing: Int8Array | null, sampleCount: number)
 export async function loadSongStem(
   song: Song,
   role: Role,
+  mono: boolean,
   deps: LoadSongStemDeps = defaultDeps,
 ): Promise<StemBuffers> {
   const ref = song.stems[role];
   const flacBytes = await deps.readStem(ref.path);
   const { channels } = await deps.decodeFlac(flacBytes);
+  const [left, right] = channels;
 
   let existingPeaks: Int8Array | null;
   try {
@@ -51,15 +59,14 @@ export async function loadSongStem(
     existingPeaks = null;
   }
 
-  if (peaksNeedRepair(existingPeaks, channels[0].length)) {
-    const [left, right] = channels;
+  if (peaksNeedRepair(existingPeaks, left.length)) {
     await deps.writePeaks(song.id, role, computePeaks(left, right));
   }
 
-  return { channels };
+  return { channels: mono ? [downmixToMono(left, right)] : channels };
 }
 
-/** Binds loadSongStem to one Song, ready to hand to createTransport. */
-export function songStemLoader(song: Song, deps: LoadSongStemDeps = defaultDeps): StemLoader {
-  return (role) => loadSongStem(song, role, deps);
+/** Binds loadSongStem to one Song and the mono preference, ready to hand to createTransport. */
+export function songStemLoader(song: Song, mono: boolean, deps: LoadSongStemDeps = defaultDeps): StemLoader {
+  return (role) => loadSongStem(song, role, mono, deps);
 }

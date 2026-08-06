@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { loadSongStem, peaksNeedRepair, songStemLoader, type LoadSongStemDeps } from '../loadSong.ts';
+import { downmixToMono } from '../downmix.ts';
 import { computePeaks } from '../../separation/peaks.ts';
 import { stemPath, peaksPath } from '../../storage/opfs.ts';
 import { defaultPracticeState } from '../../domain/types.ts';
@@ -77,12 +78,39 @@ describe('loadSongStem', () => {
     const song = makeSong();
     const deps = makeDeps();
 
-    const result = await loadSongStem(song, 'bass', deps);
+    const result = await loadSongStem(song, 'bass', false, deps);
 
     expect(deps.readStem).toHaveBeenCalledWith(song.stems.bass.path);
     expect(deps.decodeFlac).toHaveBeenCalledTimes(1);
     expect(result.channels).toHaveLength(2);
     for (const ch of result.channels) expect(ch).toBeInstanceOf(Float32Array);
+  });
+
+  it('downmixes to a single channel when mono is requested', async () => {
+    const song = makeSong();
+    const [left, right] = fakeChannels();
+    const deps = makeDeps({
+      decodeFlac: vi.fn(async () => ({ channels: [left, right], sampleRate: 44100, bitsPerSample: 16, tags: {} })),
+    });
+
+    const result = await loadSongStem(song, 'bass', true, deps);
+
+    expect(result.channels).toHaveLength(1);
+    expect(result.channels[0]).toEqual(downmixToMono(left, right));
+  });
+
+  it('computes peaks from the full stereo signal even when mono is requested', async () => {
+    const song = makeSong();
+    const [left, right] = fakeChannels();
+    const deps = makeDeps({
+      readPeaks: vi.fn(async () => { throw notFound(); }),
+      decodeFlac: vi.fn(async () => ({ channels: [left, right], sampleRate: 44100, bitsPerSample: 16, tags: {} })),
+    });
+
+    await loadSongStem(song, 'bass', true, deps);
+
+    const [, , peaks] = (deps.writePeaks as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(peaks).toEqual(computePeaks(left, right));
   });
 
   it('recomputes and writes peaks when the peaks file is missing', async () => {
@@ -93,7 +121,7 @@ describe('loadSongStem', () => {
       decodeFlac: vi.fn(async () => ({ channels: [left, right], sampleRate: 44100, bitsPerSample: 16, tags: {} })),
     });
 
-    await loadSongStem(song, 'drums', deps);
+    await loadSongStem(song, 'drums', false, deps);
 
     expect(deps.writePeaks).toHaveBeenCalledTimes(1);
     const [id, role, peaks] = (deps.writePeaks as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -111,7 +139,7 @@ describe('loadSongStem', () => {
       decodeFlac: vi.fn(async () => ({ channels: [left, right], sampleRate: 44100, bitsPerSample: 16, tags: {} })),
     });
 
-    await loadSongStem(song, 'other', deps);
+    await loadSongStem(song, 'other', false, deps);
 
     expect(deps.writePeaks).toHaveBeenCalledTimes(1);
   });
@@ -125,7 +153,7 @@ describe('loadSongStem', () => {
       decodeFlac: vi.fn(async () => ({ channels: [left, right], sampleRate: 44100, bitsPerSample: 16, tags: {} })),
     });
 
-    await loadSongStem(song, 'vocals', deps);
+    await loadSongStem(song, 'vocals', false, deps);
 
     expect(deps.writePeaks).not.toHaveBeenCalled();
   });
@@ -134,14 +162,14 @@ describe('loadSongStem', () => {
     const song = makeSong();
     const deps = makeDeps({ readPeaks: vi.fn(async () => { throw notFound(); }) });
 
-    await expect(loadSongStem(song, 'vocals', deps)).resolves.toBeDefined();
+    await expect(loadSongStem(song, 'vocals', false, deps)).resolves.toBeDefined();
   });
 
   it('propagates a non-NotFoundError from reading peaks rather than treating it as missing', async () => {
     const song = makeSong();
     const deps = makeDeps({ readPeaks: vi.fn(async () => { throw new Error('disk error'); }) });
 
-    await expect(loadSongStem(song, 'vocals', deps)).rejects.toThrow('disk error');
+    await expect(loadSongStem(song, 'vocals', false, deps)).rejects.toThrow('disk error');
   });
 });
 
@@ -149,10 +177,23 @@ describe('songStemLoader', () => {
   it('binds loadSongStem to the given Song so it can be handed to createTransport as a StemLoader', async () => {
     const song = makeSong();
     const deps = makeDeps();
-    const loader = songStemLoader(song, deps);
+    const loader = songStemLoader(song, false, deps);
 
     await loader('bass');
 
     expect(deps.readStem).toHaveBeenCalledWith(song.stems.bass.path);
+  });
+
+  it('binds the mono flag through to loadSongStem', async () => {
+    const song = makeSong();
+    const [left, right] = fakeChannels();
+    const deps = makeDeps({
+      decodeFlac: vi.fn(async () => ({ channels: [left, right], sampleRate: 44100, bitsPerSample: 16, tags: {} })),
+    });
+    const loader = songStemLoader(song, true, deps);
+
+    const result = await loader('bass');
+
+    expect(result.channels).toHaveLength(1);
   });
 });

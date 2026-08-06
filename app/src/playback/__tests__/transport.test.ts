@@ -422,7 +422,7 @@ describe('createTransport — node setup', () => {
     const loadStem = vi.fn(async (role: Role) => stems[role]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transport = await createTransport(fakeAudioContext() as any, loadStem, createNode as any);
+    const transport = await createTransport(fakeAudioContext() as any, loadStem, false, createNode as any);
 
     expect(createNode).toHaveBeenCalledTimes(ROLES.length);
     for (const call of createNode.mock.results) {
@@ -446,13 +446,39 @@ describe('createTransport — node setup', () => {
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await createTransport(fakeAudioContext() as any, loadStem, createNode as any);
+    await createTransport(fakeAudioContext() as any, loadStem, false, createNode as any);
 
     // Node creation runs first (no PCM involved), then load/transfer pairs
     // interleave one role at a time — loadStem for role N+1 is never called
     // before role N's buffers were handed to addBuffers, so the load never
     // holds more than one decoded stem in memory at once.
     expect(events).toEqual(ROLES.flatMap(role => [`load:${role}`, `addBuffers:${role}`]));
+  });
+
+  it('configures a mono output channel count when mono is requested (§4.5)', async () => {
+    const createNode = sequentialCreateNode();
+    const loadStem = vi.fn(async () => ({ channels: [new Float32Array([1, 2, 3, 4])] }));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTransport(fakeAudioContext() as any, loadStem, true, createNode as any);
+
+    const calls = createNode.mock.calls as unknown as Array<[unknown, { outputChannelCount: number[] }]>;
+    for (const call of calls) {
+      expect(call[1]).toEqual(expect.objectContaining({ outputChannelCount: [1] }));
+    }
+  });
+
+  it('configures a stereo output channel count by default', async () => {
+    const createNode = sequentialCreateNode();
+    const loadStem = vi.fn(async () => ({ channels: [new Float32Array([1, 2, 3, 4]), new Float32Array([1, 2, 3, 4])] }));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTransport(fakeAudioContext() as any, loadStem, false, createNode as any);
+
+    const calls = createNode.mock.calls as unknown as Array<[unknown, { outputChannelCount: number[] }]>;
+    for (const call of calls) {
+      expect(call[1]).toEqual(expect.objectContaining({ outputChannelCount: [2] }));
+    }
   });
 
   it('dispose() drops each node\'s buffers before disconnecting it and its gain', async () => {
@@ -468,7 +494,7 @@ describe('createTransport — node setup', () => {
     const loadStem = vi.fn(async () => ({ channels: [new Float32Array([1, 2, 3, 4])] }));
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transport = await createTransport(fakeAudioContext() as any, loadStem, createNode as any);
+    const transport = await createTransport(fakeAudioContext() as any, loadStem, false, createNode as any);
     await transport.dispose();
 
     for (const role of ROLES) {

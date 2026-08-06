@@ -5,6 +5,8 @@ import { getSong } from '../storage/db.ts';
 import { savePractice } from '../library/engine.ts';
 import { createTransport, type Transport } from '../playback/transport.ts';
 import { songStemLoader } from '../playback/loadSong.ts';
+import { playbackMemoryBytes, exceedsBudget, DESKTOP_MEMORY_BUDGET_BYTES } from '../playback/memory.ts';
+import { getMonoPreference, setMonoPreference } from '../playback/monoPreference.ts';
 import { loadSongPeaks } from '../waveform/loadPeaks.ts';
 import { WaveformStack } from '../components/WaveformStack.tsx';
 import {
@@ -81,6 +83,11 @@ function formatLoopSec(seconds: number): string {
   return seconds.toFixed(2);
 }
 
+function formatMemory(bytes: number): string {
+  const gb = bytes / (1024 * 1024 * 1024);
+  return `${gb.toFixed(2)} GB`;
+}
+
 export function Player() {
   const { id } = useParams<{ id: string }>();
   // Keyed by id, so a stale result from a previous id reads as loading
@@ -105,6 +112,10 @@ export function Player() {
   const [playing, setPlaying] = useState(false);
   const [seekInput, setSeekInput] = useState('0');
   const [practice, setPractice] = useState<PracticeState>(defaultPracticeState());
+  // A device-level preference in localStorage, not part of Practice state
+  // (§4.5) — the same library may want different answers on different
+  // machines, so it's read once per mount rather than carried on the Song.
+  const [mono, setMono] = useState(() => getMonoPreference());
   // Solo is a momentary gesture (never persisted) — always off on open.
   const [solo, setSolo] = useState<Record<Role, boolean>>(NO_SOLO);
   const [position, setPosition] = useState(0);
@@ -121,17 +132,21 @@ export function Player() {
   const loadError = currentLoad?.error ?? null;
 
   // Loads the four Stems into a fresh transport whenever the resolved Song
-  // changes. The four Stems load sequentially, decoded straight to
-  // transferable Float32Arrays and handed to the stretcher one at a time
-  // (§4.4) — that interleaving lives in createTransport/loadSongStem, this
-  // effect just owns the session's lifetime.
+  // changes, or the mono override is flipped. The four Stems load
+  // sequentially, decoded straight to transferable Float32Arrays and handed
+  // to the stretcher one at a time (§4.4) — that interleaving lives in
+  // createTransport/loadSongStem, this effect just owns the session's
+  // lifetime. Mono has to rebuild the session rather than adjust it live:
+  // the stretcher's own output channel count is fixed at node creation, and
+  // `addBuffers` can only be called once per stem (§4.3), so toggling mono
+  // means starting over — same as reopening the Song.
   useEffect(() => {
     if (!song) return;
     let cancelled = false;
     const songId = song.id;
 
     const audioContext = new AudioContext();
-    createTransport(audioContext, songStemLoader(song))
+    createTransport(audioContext, songStemLoader(song, mono), mono)
       .then(async transport => {
         if (cancelled) {
           void releaseSession({ transport, audioContext });
@@ -188,7 +203,7 @@ export function Player() {
       sessionRef.current = null;
       if (session) void releaseSession(session);
     };
-  }, [song]);
+  }, [song, mono]);
 
   const play = useCallback(() => {
     const session = sessionRef.current;
@@ -231,6 +246,15 @@ export function Player() {
   }, [practice, persistPractice]);
 
   const resetRate = useCallback(() => changeRate(1), [changeRate]);
+
+  // The mono override (§4.5): a manual, always-available preference stored
+  // in localStorage, never in Practice state. Toggling it rebuilds the
+  // session (see the effect above) rather than adjusting live.
+  const toggleMono = useCallback(() => {
+    const next = !mono;
+    setMonoPreference(next);
+    setMono(next);
+  }, [mono]);
 
   // The one path every loop mutation funnels through — toggling on/off
   // included — writing whichever of `loop`/`loopEnabled` the caller passes
@@ -376,6 +400,11 @@ export function Player() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [focusedLoopField, nudgeFocusedLoopField, playing, play, pause, setLoopStartFromPlayhead, setLoopEndFromPlayhead, toggleLoop]);
 
+  // Computed straight from duration — the half of the memory policy we
+  // know exactly, before a byte of this Song is decoded (§4.5).
+  const memoryBytes = song ? playbackMemoryBytes(song.durationSec, song.sampleRate, mono) : 0;
+  const memoryOverBudget = song ? exceedsBudget(memoryBytes) : false;
+
   return (
     <div className="surface">
       <header className="surface-header">
@@ -421,6 +450,20 @@ export function Player() {
               </label>
               <span className="player-tempo-readout">{formatRate(practice.tempo)}</span>
               <button onClick={resetRate} disabled={practice.tempo === 1}>Reset to 1×</button>
+            </div>
+            <div className="player-memory">
+              <label className="player-memory-mono">
+                <input type="checkbox" checked={mono} onChange={toggleMono} />
+                Mono playback (halves memory use)
+              </label>
+              {/* Under budget: no message at all (§4.5) — only ever shown once over. */}
+              {memoryOverBudget && (
+                <p className="player-memory-warning">
+                  This song needs about {formatMemory(memoryBytes)} of memory to play — over the
+                  {' '}{formatMemory(DESKTOP_MEMORY_BUDGET_BYTES)} desktop budget. Playback will
+                  still be attempted; enable mono above to halve the cost.
+                </p>
+              )}
             </div>
             {peaks && (
               <WaveformStack

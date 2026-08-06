@@ -161,7 +161,9 @@ export type CreateStretchNode = (
 ) => Promise<StretchNode>;
 
 // Stems are always stereo FLAC on disk (spec §3.5) — known before any stem
-// is decoded, so node creation never has to wait on `loadStem`.
+// is decoded, so node creation never has to wait on `loadStem`. The mono
+// override (§4.5) is also known up front, from a localStorage preference
+// rather than the disk format, so it's just as available before decode.
 const STEM_CHANNEL_COUNT = 2;
 
 /**
@@ -174,21 +176,25 @@ const STEM_CHANNEL_COUNT = 2;
  * role's buffers have already been transferred away, so the load's memory
  * spike stays one stem wide rather than steady-state-plus-four (§4.4).
  * `createNode` defaults to the real signalsmith-stretch factory; tests
- * inject a fake to run without a browser.
+ * inject a fake to run without a browser. `mono` must match what `loadStem`
+ * itself hands back (one channel vs two) — it only controls how the node's
+ * output is configured, since the downmix happens upstream in `loadStem`.
  */
 export async function createTransport(
   audioContext: AudioContext,
   loadStem: StemLoader,
+  mono: boolean = false,
   createNode: CreateStretchNode = SignalsmithStretch,
 ): Promise<Transport> {
   const nodes = {} as Record<Role, StretchNode>;
   const gains = {} as Record<Role, GainNode>;
+  const channelCount = mono ? 1 : STEM_CHANNEL_COUNT;
 
   for (const role of ROLES) {
     const node = await createNode(audioContext, {
       numberOfInputs: 1,
       numberOfOutputs: 1,
-      outputChannelCount: [STEM_CHANNEL_COUNT],
+      outputChannelCount: [channelCount],
     });
     await node.configure({ splitComputation: true });
 
