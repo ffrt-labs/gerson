@@ -1,6 +1,5 @@
 import { createEncoder } from '../codec/flac.ts';
 import {
-  readRecording,
   readModel,
   writeStem,
   writePeaks,
@@ -9,6 +8,7 @@ import {
 } from '../storage/opfs.ts';
 import { commitSeparationToSong, putSeparation } from '../storage/db.ts';
 import { computePeaks } from './peaks.ts';
+import type { RecordingPayload } from './decode.ts';
 import type { Role, Song, Separation, StemRef, SeparationFailureCause } from '../domain/types.ts';
 import { ROLES, defaultPracticeState } from '../domain/types.ts';
 
@@ -96,41 +96,16 @@ async function loadModel(mod: DemucsModule): Promise<void> {
   mod._free(ptr);
 }
 
-async function decodePCM(bytes: ArrayBuffer): Promise<{
-  left: Float32Array;
-  right: Float32Array;
-  durationSec: number;
-}> {
-  // decodeAudioData decodes the full file regardless of the context rendering
-  // length — length=1 is a cheap way to obtain a decoding context in a worker.
-  const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: 1, sampleRate: 44100 });
-  const buffer = await ctx.decodeAudioData(bytes);
-  const left = buffer.getChannelData(0).slice();
-  const right = (buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : buffer.getChannelData(0)).slice();
-  return { left, right, durationSec: buffer.duration };
-}
-
-function detectMimeType(bytes: Uint8Array): string {
-  if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return 'audio/mpeg';
-  if (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) return 'audio/mpeg';
-  if (bytes[0] === 0x66 && bytes[1] === 0x4c && bytes[2] === 0x61 && bytes[3] === 0x43) return 'audio/flac';
-  if (bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) return 'audio/ogg';
-  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) return 'audio/wav';
-  return 'application/octet-stream';
-}
-
-async function runSeparation(separation: Separation): Promise<Song> {
+// `recording` is decoded on the main thread by engine.ts before dispatch —
+// OfflineAudioContext (needed to decode) is undefined inside a Worker's
+// global scope in every current browser. See decode.ts.
+async function runSeparation(separation: Separation, recording: RecordingPayload): Promise<Song> {
   const { id, title, uploadPath } = separation;
-
-  await putSeparation({ ...separation, status: 'running', progress: 0 });
+  const { left, right, durationSec, recordingBytes, recordingMimeType } = recording;
 
   const mod = await ensureReady();
 
-  const recordingBytes = await readRecording(uploadPath);
-  const { left: inputL, right: inputR, durationSec } =
-    await decodePCM(recordingBytes.buffer.slice(0) as ArrayBuffer);
-
-  const numSamples = inputL.length;
+  const numSamples = left.length;
   const bytesF32 = numSamples * 4;
   const f32idx = (ptr: number) => ptr >>> 2;
 
@@ -144,8 +119,8 @@ async function runSeparation(separation: Separation): Promise<Song> {
   let phase: SeparationFailureCause = 'worker';
 
   try {
-    mod.HEAPF32.set(inputL, f32idx(ptrL));
-    mod.HEAPF32.set(inputR, f32idx(ptrR));
+    mod.HEAPF32.set(left, f32idx(ptrL));
+    mod.HEAPF32.set(right, f32idx(ptrR));
 
     // Synchronous call; WASM posts PROGRESS_UPDATE via postMessage during inference.
     mod._modelDemixSegment(
@@ -195,8 +170,8 @@ async function runSeparation(separation: Separation): Promise<Song> {
       createdAt: Date.now(),
       recording: {
         path: uploadPath,
-        bytes: recordingBytes.byteLength,
-        mimeType: detectMimeType(recordingBytes),
+        bytes: recordingBytes,
+        mimeType: recordingMimeType,
         origin: 'uploaded',
       },
       stems: stemRefs as Song['stems'],
@@ -217,12 +192,12 @@ async function runSeparation(separation: Separation): Promise<Song> {
   }
 }
 
-self.addEventListener('message', (evt: MessageEvent<{ type: string; separation: Separation }>) => {
+self.addEventListener('message', (evt: MessageEvent<{ type: string; separation: Separation } & RecordingPayload>) => {
   if (evt.data?.type !== 'run') return;
 
-  const { separation } = evt.data;
+  const { separation, left, right, durationSec, recordingBytes, recordingMimeType } = evt.data;
 
-  runSeparation(separation).then(
+  runSeparation(separation, { left, right, durationSec, recordingBytes, recordingMimeType }).then(
     (song) => { self.postMessage({ type: 'done', song }); },
     (err: unknown) => {
       const error = err instanceof Error ? err.message : String(err);

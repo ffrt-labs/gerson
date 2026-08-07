@@ -52,7 +52,10 @@ export type SeparationStatus = 'queued' | 'running' | 'failed';
 // from 'worker': both end in a worker crash, but 'stalled' means the watchdog
 // gave up waiting on a worker that never posted anything at all (no error
 // event either), vs. 'worker' catching an actual thrown/uncaught error.
-export type SeparationFailureCause = 'worker' | 'storage' | 'stalled';
+// 'decode' is caught earlier still, on the main thread before the worker is
+// ever dispatched — a bad file/format, not a worker problem, so it gets its
+// own advice rather than falling into 'worker's memory-pressure framing.
+export type SeparationFailureCause = 'worker' | 'storage' | 'stalled' | 'decode';
 
 export interface Separation {
   id: string;          // same content hash as the Song it will become

@@ -16,9 +16,10 @@
 
 import type { Separation, Song, SeparationFailureCause } from '../domain/types.ts';
 import { getAllSeparations, getSeparation, putSeparation, deleteSeparation } from '../storage/db.ts';
-import { deleteSeparationBytes } from '../storage/opfs.ts';
+import { deleteSeparationBytes, readRecording } from '../storage/opfs.ts';
 import { orderedQueue, reorderQueue, nextQueueOrder } from './queue.ts';
 import { isStalled } from './watchdog.ts';
+import { decodeRecording } from './decode.ts';
 
 // ─── Public event types ───────────────────────────────────────────────────────
 
@@ -267,17 +268,7 @@ function recoverDeadSlot(slot: Slot, cause: SeparationFailureCause, error: strin
   const job = slot.job;
   replaceSlot();
   if (!job) return;
-
-  const failed: Separation = {
-    ...job,
-    status: 'failed',
-    error,
-    cause,
-    failedAt: Date.now(),
-  };
-  putSeparation(failed).catch(() => undefined);
-  emit({ type: 'failed', separation: failed });
-  dispatch();
+  void reportFailure(job, cause, error);
 }
 
 // Polled every STALL_CHECK_INTERVAL_MS to catch two ways the in-memory
@@ -326,18 +317,73 @@ function replaceSlot(): void {
 }
 
 function dispatch(): void {
-  void locked(dispatchOnce);
+  void locked(claimAndMarkRunning).then(job => { if (job) void runJob(job); });
 }
 
-async function dispatchOnce(): Promise<void> {
-  if (!current || current.busy) return; // one Separation runs at a time
+// Claims the next queued Separation for the current slot and commits its
+// 'running' status, all under the catalogue mutex — the same lock cancel()
+// uses to delete a Separation. Without that, the write here and a
+// concurrent cancel() race as independent IDB transactions, and a
+// cancelled job can be resurrected by whichever one lands last. Decoding
+// (see runJob) runs after the lock is released, so it can't hold up
+// cancel/reorder/retry for however long a large file takes to decode.
+async function claimAndMarkRunning(): Promise<Separation | null> {
+  if (!current || current.busy) return null; // one Separation runs at a time
 
   const all = await getAllSeparations();
   const next = orderedQueue(all)[0];
-  if (!next) return;
+  if (!next) return null;
 
+  const running: Separation = { ...next, status: 'running', progress: 0 };
   current.busy = true;
-  current.job = next;
+  current.job = running;
   current.lastActivityAt = Date.now();
-  current.worker.postMessage({ type: 'run', separation: next });
+
+  await putSeparation(running);
+  emit({ type: 'updated', separation: running });
+  return running;
+}
+
+// Decodes the claimed job's Recording and dispatches it to the worker.
+// OfflineAudioContext only exists on the main thread — unlike everything
+// else the worker needs — so decoding happens here, not in worker.ts; see
+// decode.ts. A decode failure is reported directly, without ever starting
+// the worker.
+async function runJob(job: Separation): Promise<void> {
+  const slot = current;
+  if (!slot) return;
+
+  try {
+    const bytes = await readRecording(job.uploadPath);
+    const recording = await decodeRecording(bytes);
+
+    // The slot may have been cancelled or replaced while decode was in
+    // flight — cancel() already deleted the Separation, so posting to a
+    // terminated worker or reporting a failure for it now would resurrect
+    // wreckage that's supposed to leave nothing behind.
+    if (current !== slot || slot.job !== job) return;
+
+    slot.worker.postMessage(
+      { type: 'run', separation: job, ...recording },
+      [recording.left.buffer, recording.right.buffer],
+    );
+  } catch (e) {
+    if (current !== slot || slot.job !== job) return;
+
+    slot.busy = false;
+    slot.job = null;
+    const message = e instanceof Error ? e.message : String(e);
+    void reportFailure(job, 'decode', message);
+  }
+}
+
+// Persists a failure for `job`, notifies listeners, and lets the queue move
+// on — the shape shared by every path that gives up on a job outside the
+// worker's own failure report (a dead worker, or a decode failure that
+// never reached the worker at all).
+async function reportFailure(job: Separation, cause: SeparationFailureCause, error: string): Promise<void> {
+  const failed: Separation = { ...job, status: 'failed', error, cause, failedAt: Date.now() };
+  await putSeparation(failed).catch(() => undefined);
+  emit({ type: 'failed', separation: failed });
+  dispatch();
 }

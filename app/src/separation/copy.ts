@@ -23,6 +23,8 @@ export function causeAdvice(cause: SeparationFailureCause): string {
       return "The result couldn't be saved to storage. Free up space, then retry.";
     case 'stalled':
       return "The separation stopped responding and had to be restarted. Try again — if it keeps happening, the file or device may be running low on resources.";
+    case 'decode':
+      return "This file couldn't be read as audio — check it's a supported format.";
   }
 }
 
