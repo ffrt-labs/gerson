@@ -35,9 +35,11 @@ const WORKER_CRASH_MESSAGE =
   'The separation worker crashed unexpectedly — this usually means the device ran low on memory.';
 
 // A worker can also die without ever throwing — e.g. a hard OOM kill of its
-// thread that the browser doesn't surface as a catchable 'error' event. Left
-// undetected, the job (and the whole queue behind it, since there's one
-// Slot) would hang forever. checkStall() below polls for that silence.
+// thread that the browser doesn't surface as a catchable 'error' event — or
+// finish and write its outcome to storage while its postMessage back to this
+// thread never arrives. Left undetected, either leaves the job (and the
+// whole queue behind it, since there's one Slot) stuck forever. See
+// pollCurrentJob() below.
 const STALL_MESSAGE = 'The separation worker stopped responding and was restarted.';
 const STALL_CHECK_INTERVAL_MS = 30 * 1000;
 
@@ -90,7 +92,7 @@ export async function start(): Promise<void> {
 
   current = createSlot();
   dispatch();
-  setInterval(checkStall, STALL_CHECK_INTERVAL_MS);
+  setInterval(() => { void pollCurrentJob(); }, STALL_CHECK_INTERVAL_MS);
 }
 
 /**
@@ -257,10 +259,10 @@ function createSlot(): Slot {
   return slot;
 }
 
-// Shared by the 'error' listener above and checkStall() below: both found a
-// worker that will never post 'done'/'failed' on its own, so both need the
-// same recovery — drop the job, get a fresh worker in, report the failure,
-// and let the queue move on to whatever's next.
+// Shared by the 'error' listener above and pollCurrentJob()'s stall check
+// below: both found a worker that will never post 'done'/'failed' on its
+// own, so both need the same recovery — drop the job, get a fresh worker
+// in, report the failure, and let the queue move on to whatever's next.
 function recoverDeadSlot(slot: Slot, cause: SeparationFailureCause, error: string): void {
   const job = slot.job;
   replaceSlot();
@@ -278,16 +280,40 @@ function recoverDeadSlot(slot: Slot, cause: SeparationFailureCause, error: strin
   dispatch();
 }
 
-// Polled every STALL_CHECK_INTERVAL_MS. Unlike the 'error' listener, the
-// worker here hasn't necessarily died — it may just be hung — so it's
-// force-terminated before the slot is replaced.
-function checkStall(): void {
+// Polled every STALL_CHECK_INTERVAL_MS to catch two ways the in-memory
+// engine can drift from what actually happened:
+//
+// 1. The worker already finished (it writes its own outcome straight to
+//    storage — see worker.ts's catch handler) but its postMessage back to
+//    this thread never arrived or got dropped. Storage is the source of
+//    truth here, so this trusts the persisted row over waiting out a
+//    timeout or reconstructing a guess at the failure.
+// 2. Nothing — storage nor a message — ever came, i.e. genuine silence.
+//    Unlike the 'error' listener, the worker here hasn't necessarily
+//    died — it may just be hung — so it's force-terminated before the
+//    slot is replaced.
+async function pollCurrentJob(): Promise<void> {
   const slot = current;
   if (!slot || !slot.busy || !slot.job) return;
-  if (!isStalled(slot.lastActivityAt, Date.now())) return;
+  const job = slot.job;
 
-  slot.worker.terminate();
-  recoverDeadSlot(slot, 'stalled', STALL_MESSAGE);
+  const persisted = await getSeparation(job.id);
+  // The slot moved on (to a different job, or was replaced entirely) while
+  // that read was in flight — whatever we learned is stale, ignore it.
+  if (current !== slot || slot.job !== job) return;
+
+  if (persisted?.status === 'failed') {
+    slot.busy = false;
+    slot.job = null;
+    emit({ type: 'failed', separation: persisted });
+    dispatch();
+    return;
+  }
+
+  if (isStalled(slot.lastActivityAt, Date.now())) {
+    slot.worker.terminate();
+    recoverDeadSlot(slot, 'stalled', STALL_MESSAGE);
+  }
 }
 
 function terminateSlot(): void {
