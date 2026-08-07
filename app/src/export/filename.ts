@@ -11,3 +11,7 @@ export function sanitizeForFilename(text: string): string {
 export function stemFilename(title: string, role: string, extension: string): string {
   return `${sanitizeForFilename(title)} - ${role}.${extension}`;
 }
+
+export function mixFilename(title: string, extension: string): string {
+  return `${sanitizeForFilename(title)} - mix.${extension}`;
+}

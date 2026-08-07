@@ -2,9 +2,12 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   chooseDeliveryRung,
   deliverStems,
+  deliverFile,
   deliverViaPicker,
+  deliverViaPickerSingle,
   deliverViaAnchors,
   deliverViaShare,
+  type DeliverableFile,
   type DeliveryCapabilities,
   type PickerEnv,
   type AnchorEnv,
@@ -18,6 +21,8 @@ const FILES: ExportedFile[] = [
   { role: 'bass', name: 'Song - bass.flac', bytes: new Uint8Array([7, 8, 9]), mimeType: 'audio/flac' },
   { role: 'other', name: 'Song - other.flac', bytes: new Uint8Array([10, 11, 12]), mimeType: 'audio/flac' },
 ];
+
+const MIX_FILE: DeliverableFile = { name: 'Song - mix.flac', bytes: new Uint8Array([9, 9, 9]), mimeType: 'audio/flac' };
 
 const NONE: DeliveryCapabilities = { picker: false, anchor: false, share: false };
 
@@ -178,5 +183,98 @@ describe('deliverStems', () => {
 
   it('rejects when no rung is available', async () => {
     await expect(deliverStems(FILES, 'Song.zip', { capabilities: NONE })).rejects.toThrow();
+  });
+});
+
+describe('deliverViaPickerSingle', () => {
+  it('writes the file straight through — no zip container', async () => {
+    let written: Uint8Array | null = null;
+    let closed = false;
+    const env: PickerEnv = {
+      showSaveFilePicker: vi.fn(async (options) => {
+        expect(options.suggestedName).toBe('Song - mix.flac');
+        return {
+          createWritable: async () => ({
+            write: async (chunk: Uint8Array) => { written = chunk; },
+            close: async () => { closed = true; },
+            abort: async () => {},
+          }),
+        } as unknown as FileSystemFileHandle;
+      }),
+    };
+
+    await deliverViaPickerSingle(MIX_FILE, env);
+
+    expect(closed).toBe(true);
+    expect(written).toEqual(MIX_FILE.bytes);
+  });
+
+  it('aborts the writable and rethrows when writing fails', async () => {
+    let aborted = false;
+    const env: PickerEnv = {
+      showSaveFilePicker: async () => ({
+        createWritable: async () => ({
+          write: async () => { throw new Error('disk full'); },
+          close: async () => {},
+          abort: async () => { aborted = true; },
+        }),
+      } as unknown as FileSystemFileHandle),
+    };
+
+    await expect(deliverViaPickerSingle(MIX_FILE, env)).rejects.toThrow('disk full');
+    expect(aborted).toBe(true);
+  });
+});
+
+describe('deliverFile', () => {
+  it('routes to the picker rung, writing the single file with no zip', async () => {
+    let pickerCalled = false;
+    await deliverFile(MIX_FILE, {
+      capabilities: { picker: true, anchor: true, share: true },
+      picker: {
+        showSaveFilePicker: async () => {
+          pickerCalled = true;
+          return {
+            createWritable: async () => ({
+              write: async () => {},
+              close: async () => {},
+              abort: async () => {},
+            }),
+          } as unknown as FileSystemFileHandle;
+        },
+      },
+    });
+    expect(pickerCalled).toBe(true);
+  });
+
+  it('routes to the anchor rung as a single download when picker is unavailable', async () => {
+    let anchorCalls = 0;
+    let downloadedName = '';
+    const rung = await deliverFile(MIX_FILE, {
+      capabilities: { picker: false, anchor: true, share: true },
+      anchor: {
+        createObjectURL: () => 'blob:x',
+        revokeObjectURL: () => {},
+        triggerClick: (_url, filename) => { anchorCalls++; downloadedName = filename; },
+      },
+    });
+    expect(rung).toBe('anchor');
+    expect(anchorCalls).toBe(1);
+    expect(downloadedName).toBe('Song - mix.flac');
+  });
+
+  it('routes to the share rung with the single file as the last resort', async () => {
+    let sharedFiles: File[] | null = null;
+    const rung = await deliverFile(MIX_FILE, {
+      capabilities: { picker: false, anchor: false, share: true },
+      share: { canShare: () => true, share: async (data) => { sharedFiles = data.files; } },
+    });
+    expect(rung).toBe('share');
+    expect(sharedFiles).toHaveLength(1);
+    expect(sharedFiles![0].name).toBe('Song - mix.flac');
+  });
+
+  it('rejects when no rung is available', async () => {
+    await expect(deliverFile(MIX_FILE, { capabilities: NONE })).rejects.toThrow();
   });
 });
