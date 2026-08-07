@@ -32,8 +32,14 @@ describe('causeAdvice', () => {
     expect(causeAdvice('storage').toLowerCase()).toMatch(/storage|space/);
   });
 
+  it('names unresponsiveness, not memory, for a stalled worker', () => {
+    expect(causeAdvice('stalled').toLowerCase()).toMatch(/respond|restart/);
+  });
+
   it('gives distinct advice per cause', () => {
-    expect(causeAdvice('worker')).not.toBe(causeAdvice('storage'));
+    const causes = ['worker', 'storage', 'stalled'] as const;
+    const advices = causes.map(causeAdvice);
+    expect(new Set(advices).size).toBe(advices.length);
   });
 });
 

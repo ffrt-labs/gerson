@@ -18,6 +18,7 @@ import type { Separation, Song, SeparationFailureCause } from '../domain/types.t
 import { getAllSeparations, getSeparation, putSeparation, deleteSeparation } from '../storage/db.ts';
 import { deleteSeparationBytes } from '../storage/opfs.ts';
 import { orderedQueue, reorderQueue, nextQueueOrder } from './queue.ts';
+import { isStalled } from './watchdog.ts';
 
 // ─── Public event types ───────────────────────────────────────────────────────
 
@@ -33,12 +34,20 @@ type Listener = (e: EngineEvent) => void;
 const WORKER_CRASH_MESSAGE =
   'The separation worker crashed unexpectedly — this usually means the device ran low on memory.';
 
+// A worker can also die without ever throwing — e.g. a hard OOM kill of its
+// thread that the browser doesn't surface as a catchable 'error' event. Left
+// undetected, the job (and the whole queue behind it, since there's one
+// Slot) would hang forever. checkStall() below polls for that silence.
+const STALL_MESSAGE = 'The separation worker stopped responding and was restarted.';
+const STALL_CHECK_INTERVAL_MS = 30 * 1000;
+
 // ─── Internal state ───────────────────────────────────────────────────────────
 
 interface Slot {
   worker: Worker;
   busy: boolean;
   job: Separation | null; // the Separation currently dispatched to this worker
+  lastActivityAt: number; // last dispatch or PROGRESS_UPDATE; watchdog basis
 }
 
 let current: Slot | null = null;
@@ -81,6 +90,7 @@ export async function start(): Promise<void> {
 
   current = createSlot();
   dispatch();
+  setInterval(checkStall, STALL_CHECK_INTERVAL_MS);
 }
 
 /**
@@ -194,7 +204,7 @@ function createSlot(): Slot {
     new URL('./worker.ts', import.meta.url),
     { type: 'module' },
   );
-  const slot: Slot = { worker, busy: false, job: null };
+  const slot: Slot = { worker, busy: false, job: null, lastActivityAt: Date.now() };
 
   worker.addEventListener('message', (evt: MessageEvent) => {
     // Ignore messages from a worker that has since been replaced (e.g. by
@@ -212,6 +222,7 @@ function createSlot(): Slot {
     };
 
     if (data?.msg === 'PROGRESS_UPDATE') {
+      slot.lastActivityAt = Date.now();
       if (slot.job) emit({ type: 'progress', id: slot.job.id, progress: data.data ?? 0 });
       return;
     }
@@ -240,24 +251,43 @@ function createSlot(): Slot {
   // needs its job reported and its slot replaced with a fresh worker.
   worker.addEventListener('error', () => {
     if (current !== slot) return;
-
-    const job = slot.job;
-    replaceSlot();
-    if (!job) return;
-
-    const failed: Separation = {
-      ...job,
-      status: 'failed',
-      error: WORKER_CRASH_MESSAGE,
-      cause: 'worker',
-      failedAt: Date.now(),
-    };
-    putSeparation(failed).catch(() => undefined);
-    emit({ type: 'failed', separation: failed });
-    dispatch();
+    recoverDeadSlot(slot, 'worker', WORKER_CRASH_MESSAGE);
   });
 
   return slot;
+}
+
+// Shared by the 'error' listener above and checkStall() below: both found a
+// worker that will never post 'done'/'failed' on its own, so both need the
+// same recovery — drop the job, get a fresh worker in, report the failure,
+// and let the queue move on to whatever's next.
+function recoverDeadSlot(slot: Slot, cause: SeparationFailureCause, error: string): void {
+  const job = slot.job;
+  replaceSlot();
+  if (!job) return;
+
+  const failed: Separation = {
+    ...job,
+    status: 'failed',
+    error,
+    cause,
+    failedAt: Date.now(),
+  };
+  putSeparation(failed).catch(() => undefined);
+  emit({ type: 'failed', separation: failed });
+  dispatch();
+}
+
+// Polled every STALL_CHECK_INTERVAL_MS. Unlike the 'error' listener, the
+// worker here hasn't necessarily died — it may just be hung — so it's
+// force-terminated before the slot is replaced.
+function checkStall(): void {
+  const slot = current;
+  if (!slot || !slot.busy || !slot.job) return;
+  if (!isStalled(slot.lastActivityAt, Date.now())) return;
+
+  slot.worker.terminate();
+  recoverDeadSlot(slot, 'stalled', STALL_MESSAGE);
 }
 
 function terminateSlot(): void {
@@ -282,5 +312,6 @@ async function dispatchOnce(): Promise<void> {
 
   current.busy = true;
   current.job = next;
+  current.lastActivityAt = Date.now();
   current.worker.postMessage({ type: 'run', separation: next });
 }
