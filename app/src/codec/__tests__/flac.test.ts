@@ -4,6 +4,8 @@ import {
   decodeFlac,
   createEncoder,
   tagFlac,
+  readVorbisComments,
+  isFlacFile,
   SAMPLE_RATE,
   BITS_PER_SAMPLE,
   COMPRESSION_LEVEL,
@@ -167,6 +169,54 @@ describe('FLAC codec', () => {
 
       const { tags } = await decodeFlac(tagged);
       expect(tags['ROLE']).toBe('other');
+    });
+  });
+
+  describe('readVorbisComments (tag-only, no audio decode)', () => {
+    it('reads tags written by encodePcm without decoding audio', async () => {
+      const flacBytes = await encodePcm(makeSineFixture(), SAMPLE_RATE, {
+        ROLE: 'vocals', SONG_ID: 'abc123', SCHEMA_VERSION: '1', TITLE: 'My Song',
+      });
+
+      const tags = readVorbisComments(flacBytes);
+
+      expect(tags['ROLE']).toBe('vocals');
+      expect(tags['SONG_ID']).toBe('abc123');
+      expect(tags['SCHEMA_VERSION']).toBe('1');
+      expect(tags['TITLE']).toBe('My Song');
+    });
+
+    it('agrees with decodeFlac\'s own tag reading', async () => {
+      const flacBytes = await encodePcm(makeSineFixture(), SAMPLE_RATE, { ROLE: 'bass', ID: 'xyz' });
+
+      const [fast, full] = await Promise.all([
+        Promise.resolve(readVorbisComments(flacBytes)),
+        decodeFlac(flacBytes).then(r => r.tags),
+      ]);
+
+      expect(fast).toEqual(full);
+    });
+
+    it('returns an empty object for a FLAC file with no comment block', async () => {
+      const flacBytes = await encodePcm(makeSineFixture());
+      expect(readVorbisComments(flacBytes)).toEqual({});
+    });
+
+    it('returns an empty object for non-FLAC bytes, without throwing', () => {
+      expect(readVorbisComments(new Uint8Array([1, 2, 3, 4, 5]))).toEqual({});
+      expect(readVorbisComments(new Uint8Array(0))).toEqual({});
+    });
+  });
+
+  describe('isFlacFile', () => {
+    it('recognises the "fLaC" magic', async () => {
+      const flacBytes = await encodePcm(makeSineFixture());
+      expect(isFlacFile(flacBytes)).toBe(true);
+    });
+
+    it('rejects non-FLAC bytes', () => {
+      expect(isFlacFile(new Uint8Array([0x52, 0x49, 0x46, 0x46]))).toBe(false); // "RIFF"
+      expect(isFlacFile(new Uint8Array([1, 2]))).toBe(false);
     });
   });
 

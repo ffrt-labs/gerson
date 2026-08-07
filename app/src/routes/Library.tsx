@@ -1,15 +1,33 @@
 import { useRef, useState, useCallback, type DragEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { JobStatusBar } from '../components/JobStatusBar.tsx';
+import { ImportMappingModal } from '../components/ImportMappingModal.tsx';
 import { useLibrary } from '../hooks/useLibrary.ts';
 import { enqueue, type EnqueueResult } from '../intake/enqueue.ts';
 import { STEMS_SIZE_BYTES } from '../intake/space.ts';
-import type { Separation, Song } from '../domain/types.ts';
+import type { Role, Separation, Song } from '../domain/types.ts';
 import { queuePosition, orderedQueue } from '../separation/queue.ts';
 import { CPU_CONTENTION_NOTICE, RESUME_NOTICE, causeAdvice } from '../separation/copy.ts';
+import { unzip } from '../import/unzip.ts';
+import { prepareImport, commitImport, type PrepareResult, type MappingCandidate } from '../import/importSet.ts';
+import type { DecodedCandidate } from '../import/decodeCandidate.ts';
 
 function formatBytes(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))} MB`;
+}
+
+function formatDuration(durationSec: number): string {
+  return `${Math.round(durationSec / 60)}m ${Math.round(durationSec % 60)}s`;
+}
+
+function isZipFile(file: File): boolean {
+  return file.type === 'application/zip' || file.name.toLowerCase().endsWith('.zip');
+}
+
+interface MappingState {
+  title: string;
+  candidates: MappingCandidate[];
+  decoded: Record<string, DecodedCandidate>;
 }
 
 // ~1.28× song duration based on observed htdemucs timing on a single worker.
@@ -228,6 +246,7 @@ export function Library() {
     songs,
     loading,
     addSeparation,
+    addSong,
     cancelSeparation,
     dismissSeparation,
     retrySeparation,
@@ -255,43 +274,207 @@ export function Library() {
   const [dragging, setDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [lastResult, setLastResult] = useState<EnqueueResult | null>(null);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+  const [mapping, setMapping] = useState<MappingState | null>(null);
+  const [mappingSubmitting, setMappingSubmitting] = useState(false);
+  const [mappingError, setMappingError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Enqueues each file in turn — sequentially, so their Separations get
   // distinct, correctly-ordered queueOrder values, and so several files
   // dropped at once each become their own queued Separation rather than
-  // only the first one.
+  // only the first one. No processing/guard management here — both
+  // handleFiles (the top-level single-file entry) and the import pipeline's
+  // redirect case (§6.2: "one file where four are expected") call this
+  // directly from within a context that already owns `processing`.
+  const enqueueFiles = useCallback(
+    async (files: File[]) => {
+      for (const file of files) {
+        const result = await enqueue(file);
+        if (result.kind === 'exists' && files.length === 1) {
+          navigate(`/player/${result.id}`);
+          return;
+        }
+        setLastResult(result);
+        if (result.kind === 'queued') {
+          addSeparation(result.separation);
+        }
+      }
+    },
+    [addSeparation, navigate],
+  );
+
   const handleFiles = useCallback(
     async (files: File[]) => {
       if (files.length === 0 || processing) return;
       setProcessing(true);
       setLastResult(null);
       try {
-        for (const file of files) {
-          const result = await enqueue(file);
-          if (result.kind === 'exists' && files.length === 1) {
-            navigate(`/player/${result.id}`);
-            return;
-          }
-          setLastResult(result);
-          if (result.kind === 'queued') {
-            addSeparation(result.separation);
-          }
-        }
+        await enqueueFiles(files);
       } finally {
         setProcessing(false);
       }
     },
-    [addSeparation, navigate, processing],
+    [enqueueFiles, processing],
+  );
+
+  // Dispatches every outcome of the import pipeline (§6.2) to a notice,
+  // navigation, a redirect back into separation, or the mapping modal.
+  // Async (and always awaited by its callers) because 'redirect' hands off
+  // to enqueueFiles, which the caller's own processing-guard finally block
+  // must wait on rather than firing and forgetting.
+  const handlePrepareResult = useCallback(
+    async (result: PrepareResult) => {
+      switch (result.kind) {
+        case 'redirect':
+          await enqueueFiles([new File([result.file.bytes as BlobPart], result.file.name)]);
+          return;
+        case 'refuse-partial':
+          setImportNotice(
+            `Dropped ${result.count} files — a stem set needs exactly four (or one file to separate).`,
+          );
+          return;
+        case 'duplicate-names':
+          setImportNotice(
+            `Two of the dropped files are both named "${result.names[0]}" — rename one and try again.`,
+          );
+          return;
+        case 'decode-failed':
+          setImportNotice(`"${result.name}": ${result.message}`);
+          return;
+        case 'refuse-length':
+          setImportNotice(
+            `These files don't line up closely enough to be one stem set — ` +
+              result.durations.map(d => `"${d.name}" ${formatDuration(d.durationSec)}`).join(', ') + '.',
+          );
+          return;
+        case 'inflight':
+          setImportNotice(`"${result.title}" is already being separated.`);
+          return;
+        case 'nospace':
+          setImportNotice(`Not enough storage. ${formatBytes(result.needsBytes)} needed.`);
+          return;
+        case 'exists':
+          navigate(`/player/${result.id}`);
+          return;
+        case 'imported':
+          addSong(result.song);
+          navigate(`/player/${result.song.id}`);
+          return;
+        case 'needs-mapping':
+          setMapping({ title: result.title, candidates: result.candidates, decoded: result.decoded });
+          return;
+      }
+    },
+    [enqueueFiles, addSong, navigate],
+  );
+
+  const handleImportZip = useCallback(
+    async (file: File) => {
+      setProcessing(true);
+      setLastResult(null);
+      setImportNotice(null);
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let entries;
+        try {
+          entries = await unzip(bytes);
+        } catch (e) {
+          setImportNotice(e instanceof Error ? e.message : String(e));
+          return;
+        }
+        if (entries.length === 0) {
+          setImportNotice('This zip has no files in it.');
+          return;
+        }
+        await handlePrepareResult(await prepareImport(entries));
+      } finally {
+        setProcessing(false);
+      }
+    },
+    [handlePrepareResult],
+  );
+
+  const handleImportFiles = useCallback(
+    async (files: File[]) => {
+      setProcessing(true);
+      setLastResult(null);
+      setImportNotice(null);
+      try {
+        const rawFiles = await Promise.all(
+          files.map(async f => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })),
+        );
+        await handlePrepareResult(await prepareImport(rawFiles));
+      } finally {
+        setProcessing(false);
+      }
+    },
+    [handlePrepareResult],
+  );
+
+  // The single top-level entry point for a drop or a file-picker selection:
+  // one drop zone, and the drop decides (§6.2). A lone .zip is unpacked; a
+  // lone non-zip file keeps today's separation path unchanged; anything
+  // else is a stem-set import candidate.
+  const handleIncoming = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0 || processing) return;
+      if (files.length === 1 && isZipFile(files[0])) {
+        await handleImportZip(files[0]);
+        return;
+      }
+      if (files.length === 1) {
+        await handleFiles(files);
+        return;
+      }
+      await handleImportFiles(files);
+    },
+    [processing, handleFiles, handleImportZip, handleImportFiles],
+  );
+
+  const handleMappingCancel = useCallback(() => {
+    setMapping(null);
+    setMappingError(null);
+  }, []);
+
+  const handleMappingConfirm = useCallback(
+    async (assignment: Record<string, Role>) => {
+      if (!mapping) return;
+      setMappingSubmitting(true);
+      setMappingError(null);
+      try {
+        const byRole = {} as Record<Role, DecodedCandidate>;
+        for (const [name, role] of Object.entries(assignment)) {
+          byRole[role] = mapping.decoded[name];
+        }
+        const result = await commitImport(byRole, mapping.title, null);
+        if (result.kind === 'inflight') {
+          setMappingError(`"${result.title}" is already being separated.`);
+          return;
+        }
+        if (result.kind === 'nospace') {
+          setMappingError(`Not enough storage. ${formatBytes(result.needsBytes)} needed.`);
+          return;
+        }
+        if (result.kind === 'imported') addSong(result.song);
+        navigate(`/player/${result.song.id}`);
+        setMapping(null);
+      } catch (e) {
+        setMappingError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setMappingSubmitting(false);
+      }
+    },
+    [mapping, addSong, navigate],
   );
 
   const handleDrop = useCallback(
     (e: DragEvent<HTMLElement>) => {
       e.preventDefault();
       setDragging(false);
-      handleFiles(Array.from(e.dataTransfer.files));
+      handleIncoming(Array.from(e.dataTransfer.files));
     },
-    [handleFiles],
+    [handleIncoming],
   );
 
   const handleDragOver = useCallback((e: DragEvent<HTMLElement>) => {
@@ -306,11 +489,11 @@ export function Library() {
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files ?? []);
-      handleFiles(files);
+      handleIncoming(files);
       // Reset so the same file(s) can be picked again
       e.target.value = '';
     },
-    [handleFiles],
+    [handleIncoming],
   );
 
   const isEmpty = separations.length === 0 && songs.length === 0;
@@ -334,7 +517,7 @@ export function Library() {
         <input
           ref={inputRef}
           type="file"
-          accept="audio/*"
+          accept="audio/*,.zip,application/zip"
           multiple
           aria-hidden="true"
           style={{ display: 'none' }}
@@ -344,6 +527,7 @@ export function Library() {
 
       <main className="surface-main library-main">
         <Notice result={lastResult} />
+        {importNotice && <p className="library-notice">{importNotice}</p>}
 
         {loading ? null : isEmpty ? (
           <p className="empty-state">No songs yet — drop an audio file or click "Add a song".</p>
@@ -371,6 +555,17 @@ export function Library() {
       </main>
 
       <JobStatusBar separations={separations} onCancel={cancelSeparation} />
+
+      {mapping && (
+        <ImportMappingModal
+          title={mapping.title}
+          candidates={mapping.candidates}
+          submitting={mappingSubmitting}
+          error={mappingError}
+          onConfirm={handleMappingConfirm}
+          onCancel={handleMappingCancel}
+        />
+      )}
     </div>
   );
 }

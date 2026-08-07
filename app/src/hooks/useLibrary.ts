@@ -78,6 +78,13 @@ export function useLibrary() {
     addToQueue();
   }, []);
 
+  // Lands a freshly-imported Song (§6.2) in library state directly — there
+  // is no Separation this went through, so the engine's 'done' event never
+  // fires for it.
+  const addSong = useCallback((song: Song) => {
+    setState(s => ({ ...s, songs: [...s.songs, song] }));
+  }, []);
+
   const cancelSeparation = useCallback((id: string) => { void cancel(id); }, []);
   const dismissSeparation = useCallback((id: string) => { void dismiss(id); }, []);
   const retrySeparation = useCallback((id: string) => { void retry(id); }, []);
@@ -104,6 +111,7 @@ export function useLibrary() {
     ...state,
     songs,
     addSeparation,
+    addSong,
     cancelSeparation,
     dismissSeparation,
     retrySeparation,
