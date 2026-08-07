@@ -6,7 +6,7 @@ export interface SpaceCheckResult {
   needsBytes: number;
 }
 
-type EstimateFn = () => Promise<StorageEstimate>;
+export type EstimateFn = () => Promise<StorageEstimate>;
 
 export async function checkSpace(
   recordingBytes: number,

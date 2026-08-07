@@ -6,6 +6,8 @@ import {
   MODEL_DOWNLOADING_NOTICE,
   causeAdvice,
   modelDownloadFailureAdvice,
+  evictionMessage,
+  smallQuotaMessage,
 } from '../copy.ts';
 
 describe('CPU_CONTENTION_NOTICE', () => {
@@ -71,5 +73,48 @@ describe('modelDownloadFailureAdvice', () => {
     const reasons = ['truncated', 'hash-mismatch', 'network', 'storage'] as const;
     const advices = reasons.map(modelDownloadFailureAdvice);
     expect(new Set(advices).size).toBe(advices.length);
+  });
+});
+
+describe('evictionMessage', () => {
+  it('names the count of affected Songs, not per-Song wording', () => {
+    expect(evictionMessage(6)).toMatch(/^Your browser cleared Gerson's stored audio\. 6 songs need to be separated again\. /);
+  });
+
+  it('uses singular grammar for exactly one Song', () => {
+    expect(evictionMessage(1)).toMatch(/^Your browser cleared Gerson's stored audio\. 1 song needs to be separated again\. /);
+  });
+
+  it('is not styled or worded as a storage error', () => {
+    expect(evictionMessage(3).toLowerCase()).not.toMatch(/error|fail/);
+  });
+
+  it('says export is the backup, in the product\'s own words', () => {
+    expect(evictionMessage(3).toLowerCase()).toMatch(/export/);
+  });
+});
+
+describe('smallQuotaMessage', () => {
+  it('frames the small quota as a browser setting, not a storage error', () => {
+    const msg = smallQuotaMessage(false).toLowerCase();
+    expect(msg).not.toMatch(/error|fail/);
+    expect(msg).toMatch(/browser|setting/);
+  });
+
+  it('says roughly how much Gerson can hold under the small quota', () => {
+    expect(smallQuotaMessage(false).toLowerCase()).toMatch(/one song/);
+  });
+
+  it('names the exact browser setting and where it lives', () => {
+    const msg = smallQuotaMessage(false);
+    expect(msg).toMatch(/Clear cookies and site data when you close all windows/);
+    expect(msg.toLowerCase()).toMatch(/site settings/);
+  });
+
+  it('folds a persist() refusal into the same message rather than a separate one', () => {
+    const withoutDenial = smallQuotaMessage(false);
+    const withDenial = smallQuotaMessage(true);
+    expect(withDenial).not.toBe(withoutDenial);
+    expect(withDenial).toContain(withoutDenial);
   });
 });

@@ -36,6 +36,26 @@ export function isNotFoundError(e: unknown): boolean {
   return e instanceof DOMException && e.name === 'NotFoundError';
 }
 
+// Resolves a handle without reading any bytes — startup reconciliation
+// (spec §7.2) needs to know a Recording or Stem is there, not what's in it,
+// and a library's worth of full-file reads on every load would be the kind
+// of cost the peaks repair path (§3.4) deliberately avoids.
+export async function fileExists(path: string): Promise<boolean> {
+  const parts = path.split('/');
+  try {
+    const root = await navigator.storage.getDirectory();
+    let dir: FileSystemDirectoryHandle = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      dir = await dir.getDirectoryHandle(parts[i]);
+    }
+    await dir.getFileHandle(parts[parts.length - 1]);
+    return true;
+  } catch (e) {
+    if (isNotFoundError(e)) return false;
+    throw e;
+  }
+}
+
 async function ignoreMissing(fn: () => Promise<void>): Promise<void> {
   try {
     await fn();

@@ -48,3 +48,28 @@ export function modelDownloadFailureAdvice(reason: ModelDownloadFailureReason): 
       return "The download couldn't be saved to storage. Free up space, then retry.";
   }
 }
+
+// Shown once, at startup, when reconciliation (storage/reconcile.ts) finds
+// catalogue rows whose files are gone (spec §7.2, §12: "Export is the
+// backup"). One origin-level notice naming the count, never one per Song.
+export function evictionMessage(removedCount: number): string {
+  const noun = removedCount === 1 ? 'song needs' : 'songs need';
+  return (
+    `Your browser cleared Gerson's stored audio. ${removedCount} ${noun} to be separated again. ` +
+    'Exporting stems is the only backup — browsers can clear this storage without warning.'
+  );
+}
+
+// Shown once, at startup, when the origin's quota is the ~300 MB "clear
+// site data on close" ceiling (spec §7.2, research/03 §2). Framed as a
+// browser setting, never as a storage error — a persist() refusal folds
+// into this same message rather than being raised as its own notice.
+export function smallQuotaMessage(persistDenied: boolean): string {
+  const base =
+    'This browser is set to "Clear cookies and site data when you close all windows" ' +
+    '(Privacy and security → Site settings), which limits what Gerson can store to about ' +
+    '300 MB — room for about one song. Turning that setting off for this site lets a library ' +
+    'persist between sessions.';
+  if (!persistDenied) return base;
+  return `${base} Gerson also asked to keep this data past the usual cleanup, and the browser declined.`;
+}
