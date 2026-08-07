@@ -6,6 +6,7 @@ import { decodeAudio, DecodeError } from './decode.ts';
 import { getSong, getSeparation, getAllSeparations, putSeparation } from '../storage/db.ts';
 import { writeRecording } from '../storage/opfs.ts';
 import { nextQueueOrder } from '../separation/queue.ts';
+import { getModelState } from '../separation/model.ts';
 
 export type EnqueueResult =
   | { kind: 'queued'; separation: Separation }
@@ -13,7 +14,9 @@ export type EnqueueResult =
   | { kind: 'inflight'; id: string; title: string }
   | { kind: 'mobile' }
   | { kind: 'nospace'; needsBytes: number }
-  | { kind: 'decode_failed'; message: string };
+  | { kind: 'decode_failed'; message: string }
+  | { kind: 'model_absent' }
+  | { kind: 'model_downloading' };
 
 function stripExtension(name: string): string {
   return name.replace(/\.[^.]+$/, '');
@@ -43,6 +46,14 @@ export async function enqueue(file: File): Promise<EnqueueResult> {
   if (existingSep && existingSep.status !== 'failed') {
     return { kind: 'inflight', id, title: existingSep.title };
   }
+
+  // Reads the three-valued model state (spec §7.3, §8) before this file
+  // commits to a fresh Separation. Checked after the exists/inflight guards
+  // above so re-opening a known Song, or a retry of an already-failed job,
+  // never gets blocked on a model it doesn't need.
+  const modelState = await getModelState();
+  if (modelState === 'absent') return { kind: 'model_absent' };
+  if (modelState === 'downloading') return { kind: 'model_downloading' };
 
   // Storage pre-flight before the decode — refuse up front if the result won't fit.
   const spaceResult = await checkSpace(storageBytes.byteLength);

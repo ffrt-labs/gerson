@@ -79,6 +79,13 @@ sha256sum ggml-model-htdemucs-4s-f16.bin
 The app verifies this hash against `MODEL_SHA256` from `dist/model-sha256.ts`
 before loading the model.
 
+**Serving it locally:** for the app to download it (spec §7.3, §8), place the
+file at `app/public/model/ggml-model-htdemucs-4s-f16.bin` — gitignored, not
+committed, and excluded from the PWA precache manifest on purpose (an 80 MB
+artifact in there would re-download on every deploy). The same path applies
+in production: the built static site must serve this file from its own
+origin, next to the rest of the build.
+
 ---
 
 ## WASM API
