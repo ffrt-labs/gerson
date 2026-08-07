@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Separation } from '../domain/types.ts';
-import { queuePosition } from '../separation/queue.ts';
+import { queuePosition, isActive } from '../separation/queue.ts';
 import { CPU_CONTENTION_NOTICE } from '../separation/copy.ts';
 
 interface JobStatusBarProps {
@@ -11,7 +11,7 @@ interface JobStatusBarProps {
 export function JobStatusBar({ separations = [], onCancel }: JobStatusBarProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const active = separations.filter(s => s.status === 'queued' || s.status === 'running');
+  const active = separations.filter(isActive);
   const label = active.length === 0
     ? 'No active jobs'
     : active.length === 1
