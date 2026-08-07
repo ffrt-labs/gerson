@@ -3,12 +3,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { JobStatusBar } from '../components/JobStatusBar.tsx';
 import { UpdateBanner } from '../components/UpdateBanner.tsx';
 import { ImportMappingModal } from '../components/ImportMappingModal.tsx';
+import { ModelDownloadModal } from '../components/ModelDownloadModal.tsx';
 import { useLibrary } from '../hooks/useLibrary.ts';
 import { enqueue, type EnqueueResult } from '../intake/enqueue.ts';
 import { STEMS_SIZE_BYTES } from '../intake/space.ts';
 import type { Role, Separation, Song } from '../domain/types.ts';
 import { queuePosition, orderedQueue } from '../separation/queue.ts';
-import { CPU_CONTENTION_NOTICE, RESUME_NOTICE, causeAdvice } from '../separation/copy.ts';
+import { CPU_CONTENTION_NOTICE, RESUME_NOTICE, MODEL_DOWNLOADING_NOTICE, causeAdvice } from '../separation/copy.ts';
 import { unzip } from '../import/unzip.ts';
 import { prepareImport, commitImport, type PrepareResult, type MappingCandidate } from '../import/importSet.ts';
 import type { DecodedCandidate } from '../import/decodeCandidate.ts';
@@ -219,6 +220,7 @@ function Notice({ result }: { result: EnqueueResult | null }) {
   if (!result) return null;
   if (result.kind === 'queued') return null;
   if (result.kind === 'exists') return null; // navigation handled in handleFile
+  if (result.kind === 'model_absent') return null; // the consent modal handles this
 
   let msg: string;
   switch (result.kind) {
@@ -235,6 +237,9 @@ function Notice({ result }: { result: EnqueueResult | null }) {
       break;
     case 'decode_failed':
       msg = result.message;
+      break;
+    case 'model_downloading':
+      msg = MODEL_DOWNLOADING_NOTICE;
       break;
   }
 
@@ -279,6 +284,7 @@ export function Library() {
   const [mapping, setMapping] = useState<MappingState | null>(null);
   const [mappingSubmitting, setMappingSubmitting] = useState(false);
   const [mappingError, setMappingError] = useState<string | null>(null);
+  const [modelDownloadFile, setModelDownloadFile] = useState<File | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Enqueues each file in turn — sequentially, so their Separations get
@@ -294,6 +300,10 @@ export function Library() {
         const result = await enqueue(file);
         if (result.kind === 'exists' && files.length === 1) {
           navigate(`/player/${result.id}`);
+          return;
+        }
+        if (result.kind === 'model_absent') {
+          setModelDownloadFile(file);
           return;
         }
         setLastResult(result);
@@ -566,6 +576,17 @@ export function Library() {
           error={mappingError}
           onConfirm={handleMappingConfirm}
           onCancel={handleMappingCancel}
+        />
+      )}
+
+      {modelDownloadFile && (
+        <ModelDownloadModal
+          onCancel={() => setModelDownloadFile(null)}
+          onReady={() => {
+            const file = modelDownloadFile;
+            setModelDownloadFile(null);
+            void handleFiles([file]);
+          }}
         />
       )}
     </div>

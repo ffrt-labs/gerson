@@ -4,3 +4,4 @@ app/node_modules/
 prototype/
 *.mp3
 *.wav
+app/public/model/

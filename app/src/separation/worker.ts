@@ -1,6 +1,7 @@
 import { createEncoder } from '../codec/flac.ts';
 import {
   readRecording,
+  readModel,
   writeStem,
   writePeaks,
   stemPath,
@@ -50,9 +51,6 @@ const STEM_OUTPUT_INDEX: Record<Role, number> = {
   vocals: 3,
 };
 
-// Replaced by consent-gate + verified download in a later iteration.
-const MODEL_PATH = '/model/ggml-model-htdemucs-4s-f16.bin';
-
 let demucsModule: DemucsModule | null = null;
 let modelLoaded = false;
 
@@ -86,10 +84,12 @@ async function loadDemucsModule(): Promise<DemucsModule> {
   }
 }
 
+// The entry point (intake/enqueue.ts) never lets a Separation reach the
+// queue until the model is 'ready', so by the time a job runs here, the
+// verified weights are already in OPFS — no network fetch, no consent
+// concern inside a worker.
 async function loadModel(mod: DemucsModule): Promise<void> {
-  const resp = await fetch(MODEL_PATH);
-  if (!resp.ok) throw new Error(`Model fetch failed: ${resp.status}`);
-  const bytes = new Uint8Array(await resp.arrayBuffer());
+  const bytes = await readModel();
   const ptr = mod._malloc(bytes.length);
   mod.HEAPU8.set(bytes, ptr);
   mod._modelInit(ptr, bytes.length);
