@@ -7,6 +7,14 @@
 
 import type { Separation } from '../domain/types.ts';
 
+// A Separation that is either running or waiting its turn (including an
+// interrupted one — still status 'queued' until an explicit Resume). Shared
+// by anything that needs to know "is a job in flight", e.g. the job status
+// bar and the PWA update gate (spec §8: reloading kills Workers).
+export function isActive(s: Separation): boolean {
+  return s.status === 'running' || s.status === 'queued';
+}
+
 // The dispatch order: queued Separations waiting their turn, excluding any
 // that are interrupted (those wait for an explicit Resume) — ascending by
 // queueOrder, so index 0 runs next.

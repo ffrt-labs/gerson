@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { orderedQueue, queuePosition, reorderQueue, nextQueueOrder } from '../queue.ts';
+import { isActive, orderedQueue, queuePosition, reorderQueue, nextQueueOrder } from '../queue.ts';
 import type { Separation } from '../../domain/types.ts';
 
 function makeSeparation(overrides: Partial<Separation> & { id: string }): Separation {
@@ -18,6 +18,18 @@ function makeSeparation(overrides: Partial<Separation> & { id: string }): Separa
     ...overrides,
   };
 }
+
+describe('isActive', () => {
+  it('is true for running and queued separations, including interrupted ones', () => {
+    expect(isActive(makeSeparation({ id: 'a', status: 'running' }))).toBe(true);
+    expect(isActive(makeSeparation({ id: 'a', status: 'queued' }))).toBe(true);
+    expect(isActive(makeSeparation({ id: 'a', status: 'queued', interrupted: true }))).toBe(true);
+  });
+
+  it('is false for a failed separation', () => {
+    expect(isActive(makeSeparation({ id: 'a', status: 'failed' }))).toBe(false);
+  });
+});
 
 describe('orderedQueue', () => {
   it('returns only queued, non-interrupted separations sorted by queueOrder', () => {

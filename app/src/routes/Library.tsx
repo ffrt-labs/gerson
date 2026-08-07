@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, type DragEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { JobStatusBar } from '../components/JobStatusBar.tsx';
+import { UpdateBanner } from '../components/UpdateBanner.tsx';
 import { ImportMappingModal } from '../components/ImportMappingModal.tsx';
 import { useLibrary } from '../hooks/useLibrary.ts';
 import { enqueue, type EnqueueResult } from '../intake/enqueue.ts';
@@ -554,6 +555,7 @@ export function Library() {
         )}
       </main>
 
+      <UpdateBanner separations={separations} />
       <JobStatusBar separations={separations} onCancel={cancelSeparation} />
 
       {mapping && (
