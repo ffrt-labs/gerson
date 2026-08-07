@@ -10,6 +10,7 @@ import { getMonoPreference, setMonoPreference } from '../playback/monoPreference
 import { loadSongPeaks } from '../waveform/loadPeaks.ts';
 import { WaveformStack } from '../components/WaveformStack.tsx';
 import { ExportStemsControl } from '../components/ExportStemsControl.tsx';
+import { ExportMixControl } from '../components/ExportMixControl.tsx';
 import {
   resizeStart,
   resizeEnd,
@@ -565,6 +566,7 @@ export function Player() {
               })}
             </div>
             <ExportStemsControl song={song} />
+            <ExportMixControl song={song} practice={practice} solo={solo} />
           </>
         )}
       </main>

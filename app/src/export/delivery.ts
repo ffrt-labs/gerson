@@ -3,14 +3,22 @@
  * STORE-only zip straight into the save dialog → <a download> falls back to
  * four sequential downloads, the universal floor → navigator.share({files})
  * covers whatever's left, chiefly mobile contexts where a plain download
- * doesn't really land anywhere the user can find it.
+ * doesn't really land anywhere the user can find it. The same three rungs
+ * serve Export mix's single file too (deliverFile) — no zip there, since
+ * one file needs no container.
  *
  * Each rung is a thin, individually-injectable wrapper around a browser
  * API, so the ladder's *choice* of rung is unit-testable without a DOM.
  */
 
-import type { ExportedFile } from './exportStems.ts';
 import { writeStoreZip, type ZipSink } from './zip.ts';
+
+/** The subset of an exported file the delivery ladder actually needs. */
+export interface DeliverableFile {
+  name: string;
+  bytes: Uint8Array;
+  mimeType: string;
+}
 
 export type DeliveryRung = 'picker' | 'anchor' | 'share';
 
@@ -38,6 +46,13 @@ export function chooseDeliveryRung(caps: DeliveryCapabilities): DeliveryRung | n
   return null;
 }
 
+// showSaveFilePicker rejects with AbortError when the user cancels the save
+// dialog — a normal outcome, not a failure worth surfacing as an error.
+// Shared by every export control that offers the picker rung.
+export function isUserCancelled(e: unknown): boolean {
+  return e instanceof DOMException && e.name === 'AbortError';
+}
+
 // ─── Rung 1: showSaveFilePicker + streamed zip ────────────────────────────────
 
 export interface PickerEnv {
@@ -51,7 +66,7 @@ const defaultPickerEnv: PickerEnv = {
 };
 
 export async function deliverViaPicker(
-  files: ExportedFile[],
+  files: DeliverableFile[],
   zipName: string,
   env: PickerEnv = defaultPickerEnv,
 ): Promise<void> {
@@ -66,6 +81,25 @@ export async function deliverViaPicker(
   const sink: ZipSink = { write: (chunk) => writable.write(chunk as Uint8Array<ArrayBuffer>) };
   try {
     await writeStoreZip(sink, files.map(f => ({ name: f.name, bytes: f.bytes })));
+    await writable.close();
+  } catch (e) {
+    await writable.abort().catch(() => undefined);
+    throw e;
+  }
+}
+
+/** Single-file counterpart to deliverViaPicker — writes the file straight through, no zip. */
+export async function deliverViaPickerSingle(
+  file: DeliverableFile,
+  env: PickerEnv = defaultPickerEnv,
+): Promise<void> {
+  const handle = await env.showSaveFilePicker({
+    suggestedName: file.name,
+    types: [{ description: file.mimeType, accept: { [file.mimeType]: [`.${file.name.split('.').pop()}`] } }],
+  });
+  const writable = await handle.createWritable();
+  try {
+    await writable.write(file.bytes as Uint8Array<ArrayBuffer>);
     await writable.close();
   } catch (e) {
     await writable.abort().catch(() => undefined);
@@ -95,7 +129,7 @@ const defaultAnchorEnv: AnchorEnv = {
 };
 
 export async function deliverViaAnchors(
-  files: ExportedFile[],
+  files: DeliverableFile[],
   env: AnchorEnv = defaultAnchorEnv,
 ): Promise<void> {
   for (const file of files) {
@@ -122,7 +156,7 @@ const defaultShareEnv: ShareEnv = {
 };
 
 export async function deliverViaShare(
-  files: ExportedFile[],
+  files: DeliverableFile[],
   env: ShareEnv = defaultShareEnv,
 ): Promise<void> {
   const shareFiles = files.map(f => new File([f.bytes as BlobPart], f.name, { type: f.mimeType }));
@@ -142,27 +176,48 @@ export interface DeliverStemsEnv {
   share?: ShareEnv;
 }
 
+// Picks the rung from `caps` and runs whichever of the three delivery
+// callbacks matches — the one piece of ladder logic deliverStems and
+// deliverFile below would otherwise each repeat.
+async function runLadder(
+  caps: DeliveryCapabilities,
+  rungs: { picker: () => Promise<void>; anchor: () => Promise<void>; share: () => Promise<void> },
+): Promise<DeliveryRung> {
+  const rung = chooseDeliveryRung(caps);
+  if (rung === 'picker') { await rungs.picker(); return rung; }
+  if (rung === 'anchor') { await rungs.anchor(); return rung; }
+  if (rung === 'share') { await rungs.share(); return rung; }
+  throw new Error('No way to save files is available in this browser.');
+}
+
 /** Delivers `files` via the first available rung of the ladder. Returns which rung was used. */
 export async function deliverStems(
-  files: ExportedFile[],
+  files: DeliverableFile[],
   zipName: string,
   env: DeliverStemsEnv = {},
 ): Promise<DeliveryRung> {
   const caps = env.capabilities ?? detectCapabilities();
-  const rung = chooseDeliveryRung(caps);
+  return runLadder(caps, {
+    picker: () => deliverViaPicker(files, zipName, env.picker),
+    anchor: () => deliverViaAnchors(files, env.anchor),
+    share: () => deliverViaShare(files, env.share),
+  });
+}
 
-  if (rung === 'picker') {
-    await deliverViaPicker(files, zipName, env.picker);
-    return rung;
-  }
-  if (rung === 'anchor') {
-    await deliverViaAnchors(files, env.anchor);
-    return rung;
-  }
-  if (rung === 'share') {
-    await deliverViaShare(files, env.share);
-    return rung;
-  }
-
-  throw new Error('No way to save files is available in this browser.');
+/**
+ * Delivers a single file via the same three-rung ladder as deliverStems,
+ * for Export mix (§6.1): one file needs no zip, so the picker rung writes
+ * it straight through and the anchor/share rungs are the existing
+ * multi-file paths handed a one-element array.
+ */
+export async function deliverFile(
+  file: DeliverableFile,
+  env: DeliverStemsEnv = {},
+): Promise<DeliveryRung> {
+  const caps = env.capabilities ?? detectCapabilities();
+  return runLadder(caps, {
+    picker: () => deliverViaPickerSingle(file, env.picker),
+    anchor: () => deliverViaAnchors([file], env.anchor),
+    share: () => deliverViaShare([file], env.share),
+  });
 }

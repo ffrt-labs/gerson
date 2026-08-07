@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeForFilename, stemFilename } from '../filename.ts';
+import { sanitizeForFilename, stemFilename, mixFilename } from '../filename.ts';
 
 describe('sanitizeForFilename', () => {
   it('leaves an already-safe title untouched', () => {
@@ -22,5 +22,15 @@ describe('stemFilename', () => {
 
   it('sanitizes the title component', () => {
     expect(stemFilename('A/B', 'drums', 'wav')).toBe('A B - drums.wav');
+  });
+});
+
+describe('mixFilename', () => {
+  it('builds "<title> - mix.<ext>"', () => {
+    expect(mixFilename('My Song', 'flac')).toBe('My Song - mix.flac');
+  });
+
+  it('sanitizes the title component', () => {
+    expect(mixFilename('A/B', 'wav')).toBe('A B - mix.wav');
   });
 });
