@@ -251,6 +251,8 @@ export function Library() {
     separations,
     songs,
     loading,
+    evictionNotice,
+    quotaNotice,
     addSeparation,
     addSong,
     cancelSeparation,
@@ -537,6 +539,8 @@ export function Library() {
       </header>
 
       <main className="surface-main library-main">
+        {evictionNotice && <p className="library-notice">{evictionNotice}</p>}
+        {quotaNotice && <p className="library-notice">{quotaNotice}</p>}
         <Notice result={lastResult} />
         {importNotice && <p className="library-notice">{importNotice}</p>}
 

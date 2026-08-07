@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Separation, Song } from '../domain/types.ts';
-import { getAllSeparations, getAllSongs } from '../storage/db.ts';
+import { getAllSeparations } from '../storage/db.ts';
+import { reconcileLibrary } from '../storage/reconcile.ts';
+import { checkQuota } from '../storage/quota.ts';
 import { subscribe, addToQueue, cancel, dismiss, retry, resume, reorder } from '../separation/engine.ts';
 import { renameSong as renameSongEngine, deleteSong as deleteSongEngine } from '../library/engine.ts';
+import { evictionMessage, smallQuotaMessage } from '../separation/copy.ts';
 import { sortSongsNewestFirst } from '../library/sort.ts';
 
 export interface LibraryState {
@@ -10,6 +13,8 @@ export interface LibraryState {
   songs: Song[];
   loading: boolean;
   error: Error | null;
+  evictionNotice: string | null;
+  quotaNotice: string | null;
 }
 
 export function useLibrary() {
@@ -18,12 +23,25 @@ export function useLibrary() {
     songs: [],
     loading: true,
     error: null,
+    evictionNotice: null,
+    quotaNotice: null,
   });
 
   useEffect(() => {
-    Promise.all([getAllSeparations(), getAllSongs()])
-      .then(([separations, songs]) => {
-        setState({ separations, songs, loading: false, error: null });
+    // Reconciliation (and its removals) resolves before the Library ever
+    // sees a Song, so a Song that can't play is never rendered — not even
+    // for one frame (spec §7.2's "before the Library renders playable
+    // Songs").
+    Promise.all([getAllSeparations(), reconcileLibrary(), checkQuota()])
+      .then(([separations, reconciled, quota]) => {
+        setState({
+          separations,
+          songs: reconciled.songs,
+          loading: false,
+          error: null,
+          evictionNotice: reconciled.removedCount > 0 ? evictionMessage(reconciled.removedCount) : null,
+          quotaNotice: quota.small ? smallQuotaMessage(quota.persistDenied) : null,
+        });
       })
       .catch((e: unknown) => {
         setState(s => ({ ...s, loading: false, error: e instanceof Error ? e : new Error(String(e)) }));
