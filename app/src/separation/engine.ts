@@ -92,7 +92,7 @@ export async function start(): Promise<void> {
 
   current = createSlot();
   dispatch();
-  setInterval(() => { void pollCurrentJob(); }, STALL_CHECK_INTERVAL_MS);
+  setInterval(() => { void locked(pollCurrentJob); }, STALL_CHECK_INTERVAL_MS);
 }
 
 /**
