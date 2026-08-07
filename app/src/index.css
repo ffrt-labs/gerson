@@ -635,3 +635,128 @@ a {
   pointer-events: none;
   z-index: 10;
 }
+
+/* ─── Modal ────────────────────────────────────────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 20;
+  padding: 1rem;
+}
+
+.modal {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 1.25rem;
+  max-width: 32rem;
+  width: 100%;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.modal-title {
+  font-size: 1.05rem;
+  margin-bottom: 0.4rem;
+}
+
+.modal-subtitle {
+  font-size: 0.85rem;
+  opacity: 0.75;
+  margin-bottom: 1rem;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.modal-actions button {
+  background: #222;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.9rem;
+}
+
+.modal-actions button:hover:not(:disabled) {
+  background: #2a2a2a;
+}
+
+.modal-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ─── Import mapping ───────────────────────────────────────────────────────── */
+
+.import-mapping-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.import-mapping-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.import-mapping-file {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.import-mapping-name {
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-mapping-duration {
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.import-mapping-role {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.import-mapping-role select {
+  background: #222;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.5rem;
+}
+
+.import-mapping-suggested {
+  font-size: 0.7rem;
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.import-mapping-error {
+  font-size: 0.8rem;
+  color: #e0605a;
+  margin-top: 0.75rem;
+}

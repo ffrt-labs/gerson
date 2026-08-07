@@ -187,6 +187,69 @@ function injectVorbisComments(flacBytes: Uint8Array, tags: Record<string, string
   return result;
 }
 
+// Cheap signature check — no WASM boot required, unlike decodeFlac.
+export function isFlacFile(bytes: Uint8Array): boolean {
+  return bytes.length >= 4
+    && bytes[0] === 0x66 && bytes[1] === 0x4c && bytes[2] === 0x61 && bytes[3] === 0x43; // "fLaC"
+}
+
+function parseVorbisCommentBlock(
+  bytes: Uint8Array, view: DataView, start: number, end: number, tags: Record<string, string>,
+): void {
+  let p = start;
+  if (p + 4 > end) return;
+  const vendorLen = view.getUint32(p, true);
+  p += 4 + vendorLen;
+  if (p + 4 > end) return;
+  const count = view.getUint32(p, true);
+  p += 4;
+
+  const td = new TextDecoder();
+  for (let i = 0; i < count && p + 4 <= end; i++) {
+    const len = view.getUint32(p, true);
+    p += 4;
+    if (p + len > end) break;
+    const comment = td.decode(bytes.subarray(p, p + len));
+    p += len;
+    const eq = comment.indexOf('=');
+    if (eq > 0) tags[comment.slice(0, eq).toUpperCase()] = comment.slice(eq + 1);
+  }
+}
+
+/**
+ * Reads a FLAC file's Vorbis comment tags directly from its metadata
+ * blocks, without decoding any audio frames or booting the WASM decoder.
+ * Import (§6.2) uses this to check identity/role tags before paying for a
+ * full decode — "identity is checked before any work". Returns an empty
+ * object for a non-FLAC file or one with no comment block, never throws.
+ */
+export function readVorbisComments(flacBytes: Uint8Array): VorbisTags {
+  const tags: VorbisTags = {};
+  if (!isFlacFile(flacBytes)) return tags;
+
+  const view = new DataView(flacBytes.buffer, flacBytes.byteOffset, flacBytes.byteLength);
+  let off = 4; // skip "fLaC"
+
+  while (off + 4 <= flacBytes.length) {
+    const headerByte = flacBytes[off];
+    const blockType = headerByte & 0x7f;
+    const dataLen = readUint24BE(flacBytes, off + 1);
+    const isLast = (headerByte & 0x80) !== 0;
+    const blockStart = off + 4;
+    const blockEnd = blockStart + dataLen;
+    if (blockType > 6 || blockEnd > flacBytes.length) break; // guard against malformed/audio territory
+
+    if (blockType === METADATA_TYPE_VORBIS_COMMENT) {
+      parseVorbisCommentBlock(flacBytes, view, blockStart, blockEnd, tags);
+    }
+
+    if (isLast) break;
+    off = blockEnd;
+  }
+
+  return tags;
+}
+
 function pcmToInt32Interleaved(channels: Float32Array[]): Int32Array {
   const numCh = channels.length;
   const numSamples = channels[0].length;
