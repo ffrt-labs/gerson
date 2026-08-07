@@ -21,6 +21,8 @@ export function causeAdvice(cause: SeparationFailureCause): string {
       return 'This can happen when memory runs low — try closing other tabs or apps, then retry.';
     case 'storage':
       return "The result couldn't be saved to storage. Free up space, then retry.";
+    case 'stalled':
+      return "The separation stopped responding and had to be restarted. Try again — if it keeps happening, the file or device may be running low on resources.";
   }
 }
 

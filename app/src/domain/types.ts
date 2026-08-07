@@ -48,8 +48,11 @@ export type SeparationStatus = 'queued' | 'running' | 'failed';
 
 // Named, not generalised: each cause leads to a different suggested action.
 // A cancellation is never one of these — cancelling deletes the Separation
-// outright rather than leaving a failed record behind.
-export type SeparationFailureCause = 'worker' | 'storage';
+// outright rather than leaving a failed record behind. 'stalled' is distinct
+// from 'worker': both end in a worker crash, but 'stalled' means the watchdog
+// gave up waiting on a worker that never posted anything at all (no error
+// event either), vs. 'worker' catching an actual thrown/uncaught error.
+export type SeparationFailureCause = 'worker' | 'storage' | 'stalled';
 
 export interface Separation {
   id: string;          // same content hash as the Song it will become
