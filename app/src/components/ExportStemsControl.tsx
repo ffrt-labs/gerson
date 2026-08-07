@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import type { Song } from '../domain/types.ts';
 import { exportStems, type ExportFormat } from '../export/exportStems.ts';
-import { deliverStems } from '../export/delivery.ts';
+import { deliverStems, isUserCancelled } from '../export/delivery.ts';
 import { sanitizeForFilename } from '../export/filename.ts';
 
 interface ExportStemsControlProps {
@@ -9,12 +9,6 @@ interface ExportStemsControlProps {
 }
 
 type ExportStatus = 'idle' | 'exporting' | 'error';
-
-// showSaveFilePicker rejects with AbortError when the user cancels the save
-// dialog — a normal outcome, not a failure worth surfacing as an error.
-function isUserCancelled(e: unknown): boolean {
-  return e instanceof DOMException && e.name === 'AbortError';
-}
 
 /**
  * "Export stems" (§6.1): always neutral — four files, one per Role,
