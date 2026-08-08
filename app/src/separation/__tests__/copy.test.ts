@@ -36,8 +36,13 @@ describe('causeAdvice', () => {
     expect(causeAdvice('stalled').toLowerCase()).toMatch(/respond|restart/);
   });
 
+  it('names the file/format angle, not memory, for a decode failure', () => {
+    expect(causeAdvice('decode').toLowerCase()).toMatch(/format|file/);
+    expect(causeAdvice('decode').toLowerCase()).not.toMatch(/memory/);
+  });
+
   it('gives distinct advice per cause', () => {
-    const causes = ['worker', 'storage', 'stalled'] as const;
+    const causes = ['worker', 'storage', 'stalled', 'decode'] as const;
     const advices = causes.map(causeAdvice);
     expect(new Set(advices).size).toBe(advices.length);
   });
