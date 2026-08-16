@@ -54,6 +54,22 @@ const STEM_OUTPUT_INDEX: Record<Role, number> = {
 let demucsModule: DemucsModule | null = null;
 let modelLoaded = false;
 
+// TEMPORARY (#66/#67): the wasm posts PROGRESS_UPDATE and WASM_LOG from
+// *inside* the synchronous _modelDemixSegment call, so this patch is the only
+// point at which the heap can be sampled mid-inference — the worker's event
+// loop never runs until the call returns. performance.memory and
+// measureUserAgentSpecificMemory are both [Exposed=Window] and unavailable
+// here; HEAPU8.byteLength is the only trustworthy figure.
+const rawPostMessage = self.postMessage.bind(self);
+self.postMessage = ((message: unknown, ...rest: unknown[]) => {
+  const m = message as { msg?: string } | null;
+  if (m && (m.msg === 'PROGRESS_UPDATE' || m.msg === 'WASM_LOG')) {
+    (m as { heapBytes?: number }).heapBytes = demucsModule?.HEAPU8.byteLength ?? 0;
+    (m as { postedAt?: number }).postedAt = Date.now();
+  }
+  return (rawPostMessage as (m: unknown, ...r: unknown[]) => void)(message, ...rest);
+}) as typeof self.postMessage;
+
 async function ensureReady(): Promise<DemucsModule> {
   if (!demucsModule) {
     demucsModule = await loadDemucsModule();

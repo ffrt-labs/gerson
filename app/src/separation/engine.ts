@@ -20,6 +20,7 @@ import { deleteSeparationBytes, readRecording } from '../storage/opfs.ts';
 import { orderedQueue, reorderQueue, nextQueueOrder } from './queue.ts';
 import { isStalled } from './watchdog.ts';
 import { decodeRecording } from './decode.ts';
+import { diag } from './diagnostics.ts'; // TEMPORARY (#66)
 
 // ─── Public event types ───────────────────────────────────────────────────────
 
@@ -83,6 +84,13 @@ export function addToQueue(): void {
 export async function start(): Promise<void> {
   const all = await getAllSeparations();
   const running = all.filter(s => s.status === 'running');
+
+  // TEMPORARY (#66): the catalogue exactly as this page load found it — the
+  // rows that are about to be flipped to interrupted, and everything else.
+  diag('engine:start', {
+    interruptingNow: running.map(s => ({ id: s.id, title: s.title, progress: s.progress })),
+    catalogue: all.map(s => ({ id: s.id, status: s.status, progress: s.progress, interrupted: s.interrupted })),
+  });
 
   // Workers die with the page — a Separation still 'running' on load never
   // got to finish. It reverts to queued and is shown as interrupted; the
@@ -222,13 +230,31 @@ function createSlot(): Slot {
       error?: string;
       cause?: SeparationFailureCause;
       failedAt?: number;
+      heapBytes?: number; // TEMPORARY (#66)
     };
 
     if (data?.msg === 'PROGRESS_UPDATE') {
       slot.lastActivityAt = Date.now();
+      diag('worker:progress', {
+        progress: data.data,
+        job: slot.job?.id ?? null,
+        heapMB: data.heapBytes ? Math.round(data.heapBytes / 1048576) : null,
+      });
       if (slot.job) emit({ type: 'progress', id: slot.job.id, progress: data.data ?? 0 });
       return;
     }
+
+    // TEMPORARY (#66): everything that reaches this line is treated as a
+    // terminal message below — record what it actually was, and what job it
+    // is about to clear.
+    diag('worker:message-fellthrough', {
+      msg: data?.msg ?? null,
+      type: data?.type ?? null,
+      payload: typeof data?.data === 'string' ? data.data : undefined,
+      clearingJob: slot.job?.id ?? null,
+      wasBusy: slot.busy,
+      heapMB: data?.heapBytes ? Math.round(data.heapBytes / 1048576) : null,
+    });
 
     const job = slot.job;
     slot.busy = false;
@@ -252,7 +278,10 @@ function createSlot(): Slot {
 
   // A worker that dies without posting 'failed' (e.g. an OOM kill) still
   // needs its job reported and its slot replaced with a fresh worker.
-  worker.addEventListener('error', () => {
+  worker.addEventListener('error', (e: ErrorEvent) => {
+    // TEMPORARY (#66): an 'error' here means the worker threw and the
+    // renderer is alive; a renderer OOM-kill fires nothing at all.
+    diag('worker:error', { message: e.message, filename: e.filename, lineno: e.lineno, isCurrent: current === slot });
     if (current !== slot) return;
     recoverDeadSlot(slot, 'worker', WORKER_CRASH_MESSAGE);
   });
@@ -285,9 +314,14 @@ function recoverDeadSlot(slot: Slot, cause: SeparationFailureCause, error: strin
 //    slot is replaced.
 async function pollCurrentJob(): Promise<void> {
   const slot = current;
+  // TEMPORARY (#66): the watchdog's own heartbeat. If the engine has lost
+  // track of the job, this records that it is standing down while the worker
+  // is still grinding — the silent failure mode the ticket is chasing.
+  diag('engine:poll-tick', { hasSlot: !!slot, busy: slot?.busy ?? null, job: slot?.job?.id ?? null });
   if (!slot || !slot.busy || !slot.job) return;
   const job = slot.job;
 
+  diag('engine:poll', { job: job.id, sinceActivityMs: Date.now() - slot.lastActivityAt }); // TEMPORARY (#66)
   const persisted = await getSeparation(job.id);
   // The slot moved on (to a different job, or was replaced entirely) while
   // that read was in flight — whatever we learned is stale, ignore it.
