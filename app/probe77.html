@@ -1,0 +1,58 @@
+<!doctype html>
+<!-- TEMPORARY probe page for issue #77. Delete with the branch. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>#77 probe — post-inference tail</title>
+    <style>
+      body { font: 13px ui-monospace, monospace; margin: 1rem; }
+      #log { white-space: pre; }
+      .slow { color: #b00; font-weight: bold; }
+    </style>
+  </head>
+  <body>
+    <p>
+      duration <input id="dur" value="231" size="6" /> s
+      <button id="go">run</button>
+      <span id="state">idle</span>
+    </p>
+    <div id="log"></div>
+    <script type="module">
+      const log = document.getElementById('log');
+      const state = document.getElementById('state');
+      // Read by the driving agent instead of scraping the DOM.
+      window.probe77 = [];
+
+      document.getElementById('go').addEventListener('click', () => {
+        const durationSec = Number(document.getElementById('dur').value);
+        state.textContent = 'running';
+        const w = new Worker(new URL('./src/dev/probe77.worker.ts', import.meta.url), { type: 'module' });
+        let prev = 0;
+        w.addEventListener('message', (e) => {
+          const d = e.data;
+          if (d?.type !== 'probe77') return;
+          window.probe77.push(d);
+          const delta = (d.at - prev) / 1000;
+          prev = d.at;
+          const rest = Object.entries(d)
+            .filter(([k]) => !['type', 'at', 'iso', 'step', 'heapMB'].includes(k))
+            .map(([k, v]) => `${k}=${v}`).join(' ');
+          const line = document.createElement('div');
+          if (delta > 5) line.className = 'slow';
+          line.textContent =
+            `${String(d.at).padStart(9)}ms  +${delta.toFixed(1).padStart(6)}s  heap=${String(d.heapMB).padStart(4)}MB  ${d.step}  ${rest}`;
+          log.appendChild(line);
+          if (d.step === 'DONE' || d.step === 'THREW') state.textContent = d.step;
+        });
+        w.addEventListener('error', (e) => {
+          state.textContent = 'worker error';
+          window.probe77.push({ step: 'WORKER_ERROR', error: e.message });
+          log.appendChild(Object.assign(document.createElement('div'), {
+            className: 'slow', textContent: `WORKER ERROR: ${e.message}`,
+          }));
+        });
+        w.postMessage({ durationSec });
+      });
+    </script>
+  </body>
+</html>
