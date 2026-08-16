@@ -1,0 +1,128 @@
+<!doctype html>
+<!-- TEMPORARY probe page for issue #78. Delete with the branch. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>#78 probe — what makes libflac spin</title>
+    <style>
+      body { font: 12px ui-monospace, SFMono-Regular, monospace; margin: 1rem; }
+      #log { white-space: pre; }
+      .slow { color: #b00; font-weight: bold; }
+      button { font: inherit; margin-right: .4rem; }
+      h2 { font-size: 12px; margin: 1rem 0 .3rem; }
+    </style>
+  </head>
+  <body>
+    <p>
+      duration <input id="dur" value="231" size="5" /> s &nbsp;
+      rounds <input id="rounds" value="3" size="3" /> &nbsp;
+      chunk <input id="chunk" value="10" size="4" /> s (0 = skip the chunked pass) &nbsp;
+      heap <input id="grow" value="3252" size="5" /> MB &nbsp;
+      build
+      <select id="build">
+        <option value="js">js (wasm2js — what the app ships)</option>
+        <option value="wasm">wasm (libflac.wasm.js)</option>
+      </select>
+    </p>
+    <p>
+      <!-- Three scenarios, differing only in what else is in memory and where. -->
+      <button id="baseline">A · no pressure</button>
+      <button id="same">B · encode in the 3.25 GB worker</button>
+      <button id="isolated">C · 3.25 GB held in a *separate* worker</button>
+      <!-- The candidate fix: same pressure as B, but the real wasm build. -->
+      <button id="fix">D · B, but with the wasm build</button>
+      <button id="stop">terminate all</button>
+      <span id="state">idle</span>
+    </p>
+    <div id="log"></div>
+    <script type="module">
+      const $ = (id) => document.getElementById(id);
+      const log = $('log');
+      // Read by the driving agent instead of scraping the DOM.
+      window.probe78 = [];
+      let workers = [];
+
+      function params() {
+        return {
+          durationSec: Number($('dur').value),
+          rounds: Number($('rounds').value),
+          chunkSec: Number($('chunk').value),
+          growMB: Number($('grow').value),
+          build: $('build').value,
+        };
+      }
+
+      function spawn(tag, req) {
+        const w = new Worker(new URL('./src/dev/probe78.worker.ts', import.meta.url), { type: 'module' });
+        workers.push(w);
+        const prev = { t: 0 };
+        w.addEventListener('message', (e) => {
+          const d = e.data;
+          if (d?.type !== 'probe78') return;
+          window.probe78.push(d);
+          const delta = (d.at - prev.t) / 1000;
+          prev.t = d.at;
+          const rest = Object.entries(d)
+            .filter(([k]) => !['type', 'at', 'step', 'heapMB', 'tag'].includes(k))
+            .map(([k, v]) => `${k}=${v}`).join(' ');
+          const line = document.createElement('div');
+          if (delta > 3) line.className = 'slow';
+          line.textContent =
+            `${d.tag.padEnd(10)} ${String(Math.round(d.at)).padStart(8)}ms +${delta.toFixed(1).padStart(7)}s ` +
+            `heap=${String(d.heapMB).padStart(4)}MB  ${d.step.padEnd(26)} ${rest}`;
+          log.appendChild(line);
+          if (d.step.startsWith('DONE') || d.step === 'THREW') $('state').textContent = `${d.tag} ${d.step}`;
+        });
+        w.addEventListener('error', (e) => {
+          window.probe78.push({ tag, step: 'WORKER_ERROR', error: e.message });
+          $('state').textContent = `${tag} worker error`;
+        });
+        w.postMessage({ tag, hold: false, ...req });
+        return w;
+      }
+
+      function heading(text) {
+        log.appendChild(Object.assign(document.createElement('h2'), { textContent: `── ${text}` }));
+        $('state').textContent = 'running';
+      }
+
+      $('baseline').addEventListener('click', () => {
+        const p = params();
+        heading(`A · no memory pressure — ${p.durationSec}s stem, ${p.rounds} rounds`);
+        spawn('A-clean', { ...p, growMB: 0 });
+      });
+
+      $('same').addEventListener('click', () => {
+        const p = params();
+        heading(`B · same worker holds a ${p.growMB} MB demucs heap`);
+        spawn('B-same', p);
+      });
+
+      // The structural question: is the encode slow because it shares a *worker*
+      // with the demucs heap, or because it shares a *renderer* with it?
+      $('isolated').addEventListener('click', async () => {
+        const p = params();
+        heading(`C · ${p.growMB} MB held by a separate worker; encode runs clean`);
+        const holder = spawn('C-hold', { ...p, rounds: 0, chunkSec: 0, durationSec: 1, hold: true });
+        await new Promise((res) => {
+          holder.addEventListener('message', (e) => {
+            if (e.data?.step?.startsWith('DONE')) res();
+          });
+        });
+        spawn('C-encode', { ...p, growMB: 0 });
+      });
+
+      $('fix').addEventListener('click', () => {
+        const p = params();
+        heading(`D · ${p.growMB} MB in the same worker, encoding with the wasm build`);
+        spawn('D-wasm', { ...p, build: 'wasm' });
+      });
+
+      $('stop').addEventListener('click', () => {
+        workers.forEach((w) => w.terminate());
+        workers = [];
+        $('state').textContent = 'terminated';
+      });
+    </script>
+  </body>
+</html>
