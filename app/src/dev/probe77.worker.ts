@@ -77,14 +77,19 @@ function growHeapTo(m: DemucsModule, targetMB: number): { reached: number; nulls
   while (m.HEAPU8.byteLength / MB < targetMB) {
     const p = m._malloc(128 * MB);
     if (p === 0) { nulls++; break; }
+    // Touch every 4 KB page. An untouched heap costs no physical memory, and
+    // the real worker's heap — written all over by inference — is resident;
+    // the first version of this probe under-reported RSS by ~1.2 GB because
+    // of exactly this.
+    for (let o = p; o < p + 128 * MB; o += 4096) m.HEAPU8[o] = 1;
     chunks.push(p);
   }
   for (const p of chunks) m._free(p);
   return { reached: Math.round(m.HEAPU8.byteLength / MB), nulls };
 }
 
-async function run(durationSec: number): Promise<void> {
-  step('start', { durationSec });
+async function run(durationSec: number, chunkSec: number): Promise<void> {
+  step('start', { durationSec, chunkSec });
 
   mod = await loadDemucsModule();
   step('module-loaded');
@@ -144,8 +149,19 @@ async function run(durationSec: number): Promise<void> {
     const encoder = await createEncoder(2, 44100, { ROLE: role.toUpperCase(), ID: id });
     step(`${role}:encoder-created`);
 
-    encoder.push([stemL, stemR]);
-    step(`${role}:encoder-pushed`);
+    // chunkSec 0 keeps worker.ts's current behaviour — one call for the whole
+    // stem. Anything else is the lever the fix spec would have: same total
+    // samples, same encoder, only the per-call size changes.
+    if (chunkSec > 0) {
+      const chunkSamples = Math.round(chunkSec * SAMPLE_RATE);
+      for (let off = 0; off < numSamples; off += chunkSamples) {
+        const end = Math.min(off + chunkSamples, numSamples);
+        encoder.push([stemL.subarray(off, end), stemR.subarray(off, end)]);
+      }
+    } else {
+      encoder.push([stemL, stemR]);
+    }
+    step(`${role}:encoder-pushed`, { chunkSec });
 
     const flacBytes = encoder.finish();
     step(`${role}:encoder-finished`, { flacMB: +(flacBytes.byteLength / MB).toFixed(1) });
@@ -161,8 +177,8 @@ async function run(durationSec: number): Promise<void> {
   step('DONE');
 }
 
-self.addEventListener('message', (evt: MessageEvent<{ durationSec: number }>) => {
-  run(evt.data.durationSec).catch((e: unknown) => {
+self.addEventListener('message', (evt: MessageEvent<{ durationSec: number; chunkSec: number }>) => {
+  run(evt.data.durationSec, evt.data.chunkSec ?? 0).catch((e: unknown) => {
     step('THREW', { error: e instanceof Error ? `${e.name}: ${e.message}` : String(e) });
   });
 });

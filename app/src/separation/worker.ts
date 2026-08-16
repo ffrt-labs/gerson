@@ -193,8 +193,15 @@ async function runSeparation(separation: Separation, recording: RecordingPayload
       p77(`${role}:peaks-computed`);
       const encoder = await createEncoder(2, 44100, { ROLE: role.toUpperCase(), ID: id });
       p77(`${role}:encoder-created`);
-      encoder.push([stemL, stemR]);
-      p77(`${role}:encoder-pushed`);
+      // TEMPORARY (#77): the one lever under test. Identical samples, identical
+      // encoder, identical output — only the size of each process_interleaved
+      // call changes. The unchunked call is what runs ≥14.5 min at 100% CPU.
+      const CHUNK_SAMPLES = 10 * 44100;
+      for (let off = 0; off < numSamples; off += CHUNK_SAMPLES) {
+        const end = Math.min(off + CHUNK_SAMPLES, numSamples);
+        encoder.push([stemL.subarray(off, end), stemR.subarray(off, end)]);
+      }
+      p77(`${role}:encoder-pushed`, { chunkSec: 10 });
       const flacBytes = encoder.finish();
       p77(`${role}:encoder-finished`, { flacMB: +(flacBytes.byteLength / 1048576).toFixed(1) });
 

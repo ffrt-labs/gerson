@@ -13,6 +13,7 @@
   <body>
     <p>
       duration <input id="dur" value="231" size="6" /> s
+      chunk <input id="chunk" value="0" size="6" /> s (0 = one whole-stem push)
       <button id="go">run</button>
       <span id="state">idle</span>
     </p>
@@ -51,7 +52,7 @@
             className: 'slow', textContent: `WORKER ERROR: ${e.message}`,
           }));
         });
-        w.postMessage({ durationSec });
+        w.postMessage({ durationSec, chunkSec: Number(document.getElementById('chunk').value) });
       });
     </script>
   </body>
