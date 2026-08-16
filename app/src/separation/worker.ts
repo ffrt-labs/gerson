@@ -70,6 +70,27 @@ self.postMessage = ((message: unknown, ...rest: unknown[]) => {
   return (rawPostMessage as (m: unknown, ...r: unknown[]) => void)(message, ...rest);
 }) as typeof self.postMessage;
 
+// TEMPORARY (#77): #74 saw the worker fall silent after the wasm's last log
+// and assumed the hang was inside _modelDemixSegment — but nothing between
+// that log and the first writeStem is instrumented, so "inside the wasm" was
+// never actually shown. These marks make every step of the tail observable.
+// Posted as a WASM_LOG rather than logged: localStorage is [Exposed=Window] so
+// diag() cannot be called here, and the extension driving this experiment does
+// not capture a worker's console at all — a mark that only reaches the console
+// is a mark that cannot be read back after the hang. Riding the WASM_LOG shape
+// means engine.ts's existing fellthrough handler persists it with everything
+// else, with no engine change. It lands on the orphaned-job path #66 describes,
+// which by this point the real wasm logs have already taken 95 times over.
+const p77t0 = Date.now();
+function p77(step: string, detail?: Record<string, unknown>): void {
+  const heapMB = demucsModule ? Math.round(demucsModule.HEAPU8.byteLength / 1048576) : null;
+  const elapsed = ((Date.now() - p77t0) / 1000).toFixed(2);
+  self.postMessage({
+    msg: 'WASM_LOG',
+    data: `[P77] +${elapsed}s ${step} heapMB=${heapMB} ${detail ? JSON.stringify(detail) : ''}`,
+  });
+}
+
 async function ensureReady(): Promise<DemucsModule> {
   if (!demucsModule) {
     demucsModule = await loadDemucsModule();
@@ -137,6 +158,7 @@ async function runSeparation(separation: Separation, recording: RecordingPayload
   try {
     mod.HEAPF32.set(left, f32idx(ptrL));
     mod.HEAPF32.set(right, f32idx(ptrR));
+    p77('inputs-copied', { numSamples, durationSec }); // TEMPORARY (#77)
 
     // Synchronous call; WASM posts PROGRESS_UPDATE via postMessage during inference.
     mod._modelDemixSegment(
@@ -150,6 +172,7 @@ async function runSeparation(separation: Separation, recording: RecordingPayload
       outPtrs[12], outPtrs[13],
       false,
     );
+    p77('demix-returned'); // TEMPORARY (#77): the mark #74 did not have
 
     const stemRefs: Partial<Record<Role, StemRef>> = {};
 
@@ -158,21 +181,29 @@ async function runSeparation(separation: Separation, recording: RecordingPayload
       const leftBase = f32idx(outPtrs[slotIdx * 2]);
       const rightBase = f32idx(outPtrs[slotIdx * 2 + 1]);
 
+      p77(`${role}:alloc-stems`);
       const stemL = new Float32Array(numSamples);
       const stemR = new Float32Array(numSamples);
       stemL.set(mod.HEAPF32.subarray(leftBase, leftBase + numSamples));
       stemR.set(mod.HEAPF32.subarray(rightBase, rightBase + numSamples));
+      p77(`${role}:stems-copied`);
 
       // Same pass: peaks and FLAC both consume raw PCM; no re-decode from disk.
       const peaks = computePeaks(stemL, stemR);
+      p77(`${role}:peaks-computed`);
       const encoder = await createEncoder(2, 44100, { ROLE: role.toUpperCase(), ID: id });
+      p77(`${role}:encoder-created`);
       encoder.push([stemL, stemR]);
+      p77(`${role}:encoder-pushed`);
       const flacBytes = encoder.finish();
+      p77(`${role}:encoder-finished`, { flacMB: +(flacBytes.byteLength / 1048576).toFixed(1) });
 
       // OPFS before IDB: if tab dies after this line there is no Song row.
       phase = 'storage';
       await writeStem(id, role, flacBytes);
+      p77(`${role}:stem-written`);
       await writePeaks(id, role, peaks);
+      p77(`${role}:peaks-written`);
       phase = 'worker';
 
       stemRefs[role] = { path: stemPath(id, role), bytes: flacBytes.byteLength, peaksPath: peaksPath(id, role) };

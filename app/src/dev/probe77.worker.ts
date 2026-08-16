@@ -91,9 +91,8 @@ async function run(durationSec: number): Promise<void> {
 
   // Served straight from public/ rather than read from OPFS, so the probe does
   // not depend on the app having completed a model download in this profile.
-  const modelBytes = new Uint8Array(
-    await fetch('/model/ggml-model-htdemucs-4s-f16.bin').then(r => r.arrayBuffer()),
-  );
+  const modelBuf = await fetch('/model/ggml-model-htdemucs-4s-f16.bin').then(r => r.arrayBuffer());
+  const modelBytes = new Uint8Array(modelBuf as ArrayBuffer);
   const mptr = mod._malloc(modelBytes.length);
   mod.HEAPU8.set(modelBytes, mptr);
   mod._modelInit(mptr, modelBytes.length);
