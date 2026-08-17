@@ -54,7 +54,7 @@ import { exceedsLengthCap, tooLongMessage } from '../intake/length.ts';
  */
 type WorkerMessage =
   | { kind: 'progress'; progress: number }
-  | { kind: 'log' }
+  | { kind: 'chatter' }
   | { kind: 'done'; song: Song }
   | { kind: 'failed'; error: string | null; cause: SeparationFailureCause; failedAt: number };
 
@@ -64,10 +64,17 @@ function classify(data: unknown): WorkerMessage | null {
 
   switch (d.msg) {
     case 'PROGRESS_UPDATE':
-    case 'PROGRESS_UPDATE_BATCH':
       return { kind: 'progress', progress: typeof d.data === 'number' ? d.data : 0 };
+    // Recognised so it can never be mistaken for a terminal message, but not
+    // read as progress: worker.ts passes batchMode: false, so nothing can
+    // produce one today and its payload's shape has never been observed.
+    // Guessing it matches PROGRESS_UPDATE's 0..1 would put a fabricated
+    // percentage in front of the user the day someone flips the flag —
+    // exactly the kind of armed trap §2.1 exists to disarm. Whoever flips it
+    // gives this branch a real meaning then.
+    case 'PROGRESS_UPDATE_BATCH':
     case 'WASM_LOG':
-      return { kind: 'log' };
+      return { kind: 'chatter' };
   }
 
   if (d.type === 'done' && d.song) return { kind: 'done', song: d.song as Song };
@@ -276,14 +283,18 @@ function createSlot(): Slot {
     const message = classify(evt.data);
     if (!message) return; // unrecognised: inert, by construction
 
-    // Every recognised message is proof of life, terminal ones included.
-    slot.lastActivityAt = Date.now();
-
     switch (message.kind) {
-      case 'log':
+      // Deliberately does NOT touch lastActivityAt. The wasm posts ~1850 logs
+      // per Separation at ~3.6/s, so counting them as proof of life would
+      // hold the watchdog off for as long as the module keeps talking —
+      // including through an inference that has stopped making progress. Only
+      // progress is progress. See watchdog.ts, whose derivation depends on
+      // this: the windows it tolerates are the silent head and tail.
+      case 'chatter':
         return;
 
       case 'progress': {
+        slot.lastActivityAt = Date.now();
         if (!slot.job) return;
         // ~3.6 progress messages a second, ~1800 over a Separation, against a
         // UI that renders whole percent. Emitting each one would drive a React
@@ -486,13 +497,15 @@ async function runJob(job: Separation): Promise<void> {
   // Intake (intake/length.ts) refuses over-length Recordings up front, so
   // this exists solely for rows queued before the cap landed: left alone
   // such a row would spend 9–15 minutes reaching the wasm's memory abort and
-  // then report a generic RuntimeError rather than a length problem. Cause
-  // 'worker' because that is what this is — the memory limit, caught early
-  // — and the error text names the length so the row doesn't say "low on
-  // memory, try closing tabs" about a song that will never fit.
+  // then report a generic RuntimeError rather than a length problem.
+  //
+  // Its own cause, not 'worker'. The failed row's advice is driven by the
+  // cause alone — `error` is stored but never rendered — so reusing 'worker'
+  // would tell the user to close some tabs and retry a song that can never
+  // fit, no matter how many tabs they close.
   if (exceedsLengthCap(job.durationSec)) {
     releaseJob(slot);
-    void reportFailure(job, 'worker', tooLongMessage(job.durationSec));
+    void reportFailure(job, 'toolong', tooLongMessage(job.durationSec));
     return;
   }
 

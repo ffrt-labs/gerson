@@ -24,14 +24,19 @@ function formatLength(durationSec: number): string {
   return `${Math.floor(total / 60)}m ${total % 60}s`;
 }
 
+// The rule on its own, for the one surface that has no particular Recording
+// to name — causeAdvice('toolong'), which is keyed by cause alone.
+export function lengthRuleSentence(): string {
+  return (
+    `Gerson can separate Recordings up to ${MAX_RECORDING_SEC / 60} minutes — ` +
+    "a browser memory limit it can't raise."
+  );
+}
+
 // Naming the file's own length is the courtesy `nospace` already extends via
 // needsBytes. The reason is deliberately non-actionable — but without it a
 // flat refusal reads as arbitrary product stinginess, and the natural
 // response to arbitrary is to retry.
 export function tooLongMessage(durationSec: number): string {
-  return (
-    `That Recording is ${formatLength(durationSec)}. ` +
-    `Gerson can separate Recordings up to ${MAX_RECORDING_SEC / 60} minutes — ` +
-    "a browser memory limit it can't raise."
-  );
+  return `That Recording is ${formatLength(durationSec)}. ${lengthRuleSentence()}`;
 }

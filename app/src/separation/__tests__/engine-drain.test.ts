@@ -15,75 +15,14 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { Separation } from '../../domain/types.ts';
+import {
+  catalogue, FakeWorker, dbMock, opfsMock, decodeMock, separation, settle, loadEngine,
+} from './engineHarness.ts';
 
-const catalogue = new Map<string, Separation>();
-
-vi.mock('../../storage/db.ts', () => ({
-  getSeparation: (id: string) => Promise.resolve(catalogue.get(id)),
-  putSeparation: (s: Separation) => { catalogue.set(s.id, s); return Promise.resolve(); },
-  deleteSeparation: (id: string) => { catalogue.delete(id); return Promise.resolve(); },
-  getAllSeparations: () => Promise.resolve([...catalogue.values()]),
-}));
-
-vi.mock('../../storage/opfs.ts', () => ({
-  readRecording: () => Promise.resolve(new Uint8Array([1, 2, 3])),
-  deleteSeparationBytes: () => Promise.resolve(),
-}));
-
-vi.mock('../decode.ts', () => ({
-  decodeRecording: () => Promise.resolve({
-    left: new Float32Array(8),
-    right: new Float32Array(8),
-    durationSec: 1,
-    recordingBytes: 3,
-    recordingMimeType: 'audio/mpeg',
-  }),
-}));
-
-class FakeWorker {
-  static instances: FakeWorker[] = [];
-  received: unknown[] = [];
-  terminated = false;
-  private listeners = new Map<string, ((e: unknown) => void)[]>();
-
-  constructor() { FakeWorker.instances.push(this); }
-
-  addEventListener(type: string, fn: (e: unknown) => void): void {
-    const list = this.listeners.get(type) ?? [];
-    list.push(fn);
-    this.listeners.set(type, list);
-  }
-
-  postMessage(data: unknown): void { this.received.push(data); }
-  terminate(): void { this.terminated = true; }
-
-  emit(data: unknown): void {
-    for (const fn of this.listeners.get('message') ?? []) fn({ data });
-  }
-}
-
+vi.mock('../../storage/db.ts', () => dbMock());
+vi.mock('../../storage/opfs.ts', () => opfsMock());
+vi.mock('../decode.ts', () => decodeMock());
 vi.stubGlobal('Worker', FakeWorker);
-
-function separation(id: string, queueOrder: number, overrides: Partial<Separation> = {}): Separation {
-  return {
-    id, title: `song ${id}`, durationSec: 231, status: 'queued',
-    uploadPath: `uploads/${id}`, progress: 0, error: null, cause: null,
-    failedAt: null, startedAt: Date.now(), interrupted: false, queueOrder,
-    ...overrides,
-  };
-}
-
-const settle = () => new Promise(r => setTimeout(r, 0));
-
-async function loadEngine(): Promise<typeof import('../engine.ts')> {
-  vi.resetModules();
-  FakeWorker.instances.length = 0;
-  const engine = await import('../engine.ts');
-  await engine.start();
-  await settle();
-  return engine;
-}
 
 describe('recycling the worker when the queue drains', () => {
   beforeEach(() => {
@@ -172,7 +111,10 @@ describe('recycling the worker when the queue drains', () => {
     await loadEngine();
 
     expect(FakeWorker.instances[0].received).toEqual([]);
-    expect(catalogue.get('a')).toMatchObject({ status: 'failed', cause: 'worker' });
+    // Its own cause: the failed row's advice is driven by cause alone, and
+    // 'worker' would tell the user to close some tabs and retry a Recording
+    // that can never fit.
+    expect(catalogue.get('a')).toMatchObject({ status: 'failed', cause: 'toolong' });
     expect(catalogue.get('a')!.error).toContain('8m 42s');
   });
 

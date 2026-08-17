@@ -5,8 +5,12 @@
  * demucs.js posts three message kinds through the wasm module's callbacks:
  *
  *   sendProgressUpdate → { msg: 'PROGRESS_UPDATE',       data: 0..1 }
- *                        { msg: 'PROGRESS_UPDATE_BATCH', data: 0..1 }  (batch mode)
+ *                        { msg: 'PROGRESS_UPDATE_BATCH', data: ? }  (batch mode)
  *   callWriteWasmLog   → { msg: 'WASM_LOG',              data: string }
+ *
+ * Nothing can produce a PROGRESS_UPDATE_BATCH today — worker.ts passes
+ * batchMode: false — so its payload has never been observed, which is why the
+ * engine recognises it without reading it.
  *
  * The engine used to special-case only PROGRESS_UPDATE and let everything
  * else fall through to the terminal path, which clears `slot.job`/`slot.busy`
@@ -21,70 +25,16 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { Separation } from '../../domain/types.ts';
+// Not loadEngine(): these tests subscribe before start(), to observe the very
+// first dispatch.
+import {
+  catalogue, FakeWorker, dbMock, opfsMock, decodeMock, separation, settle,
+} from './engineHarness.ts';
 
-// ─── Fakes for everything the engine touches outside itself ──────────────────
-
-const catalogue = new Map<string, Separation>();
-
-vi.mock('../../storage/db.ts', () => ({
-  getSeparation: (id: string) => Promise.resolve(catalogue.get(id)),
-  putSeparation: (s: Separation) => { catalogue.set(s.id, s); return Promise.resolve(); },
-  deleteSeparation: (id: string) => { catalogue.delete(id); return Promise.resolve(); },
-  getAllSeparations: () => Promise.resolve([...catalogue.values()]),
-}));
-
-vi.mock('../../storage/opfs.ts', () => ({
-  readRecording: () => Promise.resolve(new Uint8Array([1, 2, 3])),
-  deleteSeparationBytes: () => Promise.resolve(),
-}));
-
-vi.mock('../decode.ts', () => ({
-  decodeRecording: () => Promise.resolve({
-    left: new Float32Array(8),
-    right: new Float32Array(8),
-    durationSec: 1,
-    recordingBytes: 3,
-    recordingMimeType: 'audio/mpeg',
-  }),
-}));
-
-/** Stands in for the real Worker; lets a test post the messages demucs posts. */
-class FakeWorker {
-  static instances: FakeWorker[] = [];
-  received: unknown[] = [];
-  terminated = false;
-  private listeners = new Map<string, ((e: unknown) => void)[]>();
-
-  constructor() { FakeWorker.instances.push(this); }
-
-  addEventListener(type: string, fn: (e: unknown) => void): void {
-    const list = this.listeners.get(type) ?? [];
-    list.push(fn);
-    this.listeners.set(type, list);
-  }
-
-  postMessage(data: unknown): void { this.received.push(data); }
-  terminate(): void { this.terminated = true; }
-
-  /** Deliver a message from the worker to the engine, as demucs would. */
-  emit(data: unknown): void {
-    for (const fn of this.listeners.get('message') ?? []) fn({ data });
-  }
-}
-
+vi.mock('../../storage/db.ts', () => dbMock());
+vi.mock('../../storage/opfs.ts', () => opfsMock());
+vi.mock('../decode.ts', () => decodeMock());
 vi.stubGlobal('Worker', FakeWorker);
-
-function separation(id: string, queueOrder: number): Separation {
-  return {
-    id, title: `song ${id}`, durationSec: 231, status: 'queued',
-    uploadPath: `uploads/${id}`, progress: 0, error: null, cause: null,
-    failedAt: null, startedAt: Date.now(), interrupted: false, queueOrder,
-  };
-}
-
-/** Lets the engine's chain of awaited microtasks settle. */
-const settle = () => new Promise(r => setTimeout(r, 0));
 
 const WASM_LOG = { msg: 'WASM_LOG', data: 'Beginning Demucs v4 Hybrid-Transformer inference' };
 
@@ -127,13 +77,25 @@ describe('#66 — an unrecognised worker message cannot end a job', () => {
     expect(events.filter(e => e.type === 'progress')).toHaveLength(2);
   });
 
-  it('ignores PROGRESS_UPDATE_BATCH as a terminal message, and reports it as progress', () => {
+  it('treats PROGRESS_UPDATE_BATCH as inert — neither terminal nor progress', () => {
     // The second unhandled kind, sitting behind worker.ts's batchMode: false.
+    // Nothing can produce one today and its payload has never been observed,
+    // so it must not end the job and must not be reported as a percentage.
     worker.emit({ msg: 'PROGRESS_UPDATE_BATCH', data: 0.4 });
     worker.emit({ msg: 'PROGRESS_UPDATE', data: 0.75 });
 
-    expect(events.filter(e => e.type === 'progress')).toHaveLength(2);
+    expect(events.filter(e => e.type === 'progress')).toHaveLength(1);
     expect(catalogue.get('a')!.status).toBe('running');
+  });
+
+  it('does not let chatter hold the watchdog off', async () => {
+    // ~1850 WASM_LOG per Separation at ~3.6/s. If those counted as activity,
+    // an inference that stopped progressing could never trip the watchdog.
+    for (let i = 0; i < 50; i++) worker.emit(WASM_LOG);
+    await vi.advanceTimersByTimeAsync(20 * 60 * 1000);
+    await settle();
+
+    expect(catalogue.get('a')).toMatchObject({ status: 'failed', cause: 'stalled' });
   });
 
   it('ignores a message of a kind nobody has seen yet', () => {

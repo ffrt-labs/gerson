@@ -77,13 +77,18 @@ function SeparationRow({
   actions: SeparationActions;
 }) {
   if (sep.status === 'failed') {
+    // 'toolong' is the one cause Retry cannot fix — the Recording will never
+    // fit, however many times it's tried — so the row names this Recording's
+    // own length and offers only Dismiss.
+    const tooLong = sep.cause === 'toolong';
+    const advice = tooLong ? tooLongMessage(sep.durationSec) : causeAdvice(sep.cause ?? 'worker');
     return (
       <SeparationShell
         title={sep.title}
         badge={<span className="library-item-badge library-item-badge--failed">failed</span>}
-        detail={`${new Date(sep.failedAt ?? sep.startedAt).toLocaleString()} — ${causeAdvice(sep.cause ?? 'worker')}`}
+        detail={`${new Date(sep.failedAt ?? sep.startedAt).toLocaleString()} — ${advice}`}
         controls={<>
-          <button onClick={() => actions.onRetry(sep.id)}>Retry</button>
+          {!tooLong && <button onClick={() => actions.onRetry(sep.id)}>Retry</button>}
           <button onClick={() => actions.onDismiss(sep.id)}>Dismiss</button>
         </>}
       />

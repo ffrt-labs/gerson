@@ -6,6 +6,7 @@
 import type { SeparationFailureCause } from '../domain/types.ts';
 import type { ModelDownloadFailureReason } from './model.ts';
 import { estimateMinutes } from './estimate.ts';
+import { lengthRuleSentence } from '../intake/length.ts';
 
 // Attached to the running job. Neutral language, not a warning — it is the
 // consequence of a deliberate design choice (one job at a time, app stays
@@ -48,6 +49,12 @@ export function causeAdvice(cause: SeparationFailureCause): string {
       return 'The separation stopped responding and was given up on. Starting over runs the whole thing again.';
     case 'decode':
       return "This file couldn't be read as audio — check it's a supported format.";
+    case 'toolong':
+      // Only reachable for a Separation queued before the length cap existed;
+      // intake refuses over-length Recordings outright. The row can't be
+      // retried into success, so unlike every other cause this offers no
+      // action — Dismiss is the only honest move.
+      return lengthRuleSentence();
   }
 }
 

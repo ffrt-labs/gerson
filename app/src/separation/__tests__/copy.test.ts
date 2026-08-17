@@ -66,8 +66,15 @@ describe('causeAdvice', () => {
     expect(causeAdvice('decode').toLowerCase()).not.toMatch(/memory/);
   });
 
+  it('states the length rule, and offers no retry, for an over-length Recording', () => {
+    const advice = causeAdvice('toolong');
+    expect(advice).toContain('7 minutes');
+    // The one cause Retry cannot fix — so it must not suggest trying again.
+    expect(advice.toLowerCase()).not.toMatch(/retry|try again/);
+  });
+
   it('gives distinct advice per cause', () => {
-    const causes = ['worker', 'storage', 'stalled', 'decode'] as const;
+    const causes = ['worker', 'storage', 'stalled', 'decode', 'toolong'] as const;
     const advices = causes.map(causeAdvice);
     expect(new Set(advices).size).toBe(advices.length);
   });
