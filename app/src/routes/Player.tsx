@@ -356,8 +356,13 @@ export function Player() {
         const next = transport.getPosition(at);
         // Skip the re-render when the position hasn't moved (e.g. paused,
         // where inputAt holds steady) — still evaluated every frame so a
-        // seek or rate change is picked up on the very next one.
-        if (next !== lastPositionRef.current) {
+        // seek or rate change is picked up on the very next one. The finite
+        // check has to come first: `NaN !== NaN` is true, so a non-finite
+        // clock reading would invert this guard from "skip the update" into
+        // "update on every single frame, forever", since the value can never
+        // compare equal to itself. Dropping the frame keeps the last good
+        // position instead of latching a poison one into the whole tree.
+        if (Number.isFinite(next) && next !== lastPositionRef.current) {
           lastPositionRef.current = next;
           setPosition(next);
         }

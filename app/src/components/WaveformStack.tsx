@@ -11,7 +11,7 @@ import {
   zoomViewport,
   panViewport,
   followViewport,
-  isPositionVisible,
+  followIfNeeded,
   minVisibleDurationSec,
 } from '../waveform/viewport.ts';
 import { secondsAtX } from '../waveform/geometry.ts';
@@ -100,10 +100,15 @@ export function WaveformStack({
 
   // Auto-follow only acts once the playhead has actually left the viewport
   // (§5.2) — it never nudges a viewport the playhead is still inside, which
-  // is what keeps the viewport still between gestures.
-  if (following && !isPositionVisible(position, viewport)) {
-    viewport = followViewport(viewport, position, durationSec, minDurationSec);
-    setViewport(viewport);
+  // is what keeps the viewport still between gestures. `followIfNeeded` owns
+  // the whole decision, including whether following is possible at all: a
+  // position no viewport can reach (a negative playhead during the first
+  // output-latency window after Play, #87) returns null rather than a
+  // fresh-but-identical viewport that would re-render forever.
+  const followed = following ? followIfNeeded(viewport, position, durationSec, minDurationSec) : null;
+  if (followed) {
+    viewport = followed;
+    setViewport(followed);
   }
 
   const wheelIdleTimer = useRef<number | null>(null);
