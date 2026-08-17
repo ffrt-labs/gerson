@@ -51,6 +51,10 @@ const STEM_OUTPUT_INDEX: Record<Role, number> = {
   vocals: 3,
 };
 
+// Size of the six output buffers the 4-source model never writes. Non-zero
+// so _malloc returns a distinct, valid address for each; otherwise arbitrary.
+const UNUSED_OUTPUT_BYTES = 4096;
+
 let demucsModule: DemucsModule | null = null;
 let modelLoaded = false;
 
@@ -111,8 +115,17 @@ async function runSeparation(separation: Separation, recording: RecordingPayload
 
   const ptrL = mod._malloc(bytesF32);
   const ptrR = mod._malloc(bytesF32);
-  // 7 output pairs required by the WASM ABI; only slots 0–3 carry stem audio.
-  const outPtrs = Array.from({ length: 14 }, () => mod._malloc(bytesF32));
+  // The ABI takes 7 output pairs, but the 4-source model only ever writes
+  // slots 0–3 (pointer pairs 0–7). The remaining six must still be valid
+  // pointers — they are passed, dereferenced for their address, and never
+  // written — so they get a token allocation instead of a song-length one.
+  // At 4:00 that is 1.0 GB of heap the run no longer asks for: peak slope
+  // 6.04 → 5.03 MB per second of audio, and the abort point 6:08 → 7:25.
+  // Verified caller-side against the committed demucs.js — sentinel bytes in
+  // those six buffers survive the call, and the stems come out byte-identical.
+  const outPtrs = Array.from({ length: 14 }, (_, i) =>
+    mod._malloc(i < 8 ? bytesF32 : UNUSED_OUTPUT_BYTES),
+  );
 
   // Defaults to the compute phase; flipped around each storage write below so
   // a failure there is reported with cause 'storage', not 'worker'.

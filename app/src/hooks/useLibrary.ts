@@ -3,7 +3,7 @@ import type { Separation, Song } from '../domain/types.ts';
 import { getAllSeparations } from '../storage/db.ts';
 import { reconcileLibrary } from '../storage/reconcile.ts';
 import { checkQuota } from '../storage/quota.ts';
-import { subscribe, addToQueue, cancel, dismiss, retry, resume, reorder } from '../separation/engine.ts';
+import { subscribe, addToQueue, cancel, dismiss, retry, reorder } from '../separation/engine.ts';
 import { renameSong as renameSongEngine, deleteSong as deleteSongEngine } from '../library/engine.ts';
 import { evictionMessage, smallQuotaMessage } from '../separation/copy.ts';
 import { sortSongsNewestFirst } from '../library/sort.ts';
@@ -106,7 +106,6 @@ export function useLibrary() {
   const cancelSeparation = useCallback((id: string) => { void cancel(id); }, []);
   const dismissSeparation = useCallback((id: string) => { void dismiss(id); }, []);
   const retrySeparation = useCallback((id: string) => { void retry(id); }, []);
-  const resumeSeparation = useCallback((id: string) => { void resume(id); }, []);
   const reorderSeparation = useCallback((id: string, direction: 'up' | 'down') => {
     void reorder(id, direction);
   }, []);
@@ -133,7 +132,6 @@ export function useLibrary() {
     cancelSeparation,
     dismissSeparation,
     retrySeparation,
-    resumeSeparation,
     reorderSeparation,
     renameSong,
     deleteSong,

@@ -55,7 +55,7 @@ export type SeparationStatus = 'queued' | 'running' | 'failed';
 // 'decode' is caught earlier still, on the main thread before the worker is
 // ever dispatched — a bad file/format, not a worker problem, so it gets its
 // own advice rather than falling into 'worker's memory-pressure framing.
-export type SeparationFailureCause = 'worker' | 'storage' | 'stalled' | 'decode';
+export type SeparationFailureCause = 'worker' | 'storage' | 'stalled' | 'decode' | 'toolong';
 
 export interface Separation {
   id: string;          // same content hash as the Song it will become
