@@ -5,14 +5,32 @@
 
 import type { SeparationFailureCause } from '../domain/types.ts';
 import type { ModelDownloadFailureReason } from './model.ts';
+import { estimateMinutes } from './estimate.ts';
 
 // Attached to the running job. Neutral language, not a warning — it is the
 // consequence of a deliberate design choice (one job at a time, app stays
 // usable), not an error.
 export const CPU_CONTENTION_NOTICE = 'Playback may stutter while a separation is running.';
 
-// Shown alongside Resume on an interrupted job.
-export const RESUME_NOTICE = 'Resuming starts the separation over from the beginning.';
+// Shown alongside "Start over" on an interrupted job.
+//
+// This replaces a notice that existed only to take its own button label back
+// ("Resuming starts the separation over from the beginning") — an app that
+// spends a sentence undoing its own label has the wrong label, so the truth
+// moved into the label and this line was freed for something useful.
+//
+// Two things it must not do. It must not claim to know *how* the Separation
+// stopped: the engine cannot tell a closed tab from a reload, so the copy
+// doesn't pretend to. And it must never quote prior progress — the row is
+// written back with progress: 0, so "it reached 62%" would imply partial
+// credit the engine does not have, reintroducing in prose exactly the
+// misunderstanding the relabel removes.
+export function interruptedNotice(durationSec: number): string {
+  return (
+    'This separation stopped when Gerson was closed or reloaded. ' +
+    `Starting over runs the whole thing again — about ${estimateMinutes(durationSec)} minutes.`
+  );
+}
 
 // Causes are named, not generalised, because they lead to different actions.
 export function causeAdvice(cause: SeparationFailureCause): string {
@@ -22,7 +40,12 @@ export function causeAdvice(cause: SeparationFailureCause): string {
     case 'storage':
       return "The result couldn't be saved to storage. Free up space, then retry.";
     case 'stalled':
-      return "The separation stopped responding and had to be restarted. Try again — if it keeps happening, the file or device may be running low on resources.";
+      // No attribution here, deliberately. The previous wording blamed "the
+      // file or device running low on resources" — which is wrong, not just
+      // clumsy: memory pressure surfaces as a catchable RuntimeError under
+      // cause 'worker', which owns the low-memory advice above. A 'stalled'
+      // failure is silence, and silence names no cause.
+      return 'The separation stopped responding and was given up on. Starting over runs the whole thing again.';
     case 'decode':
       return "This file couldn't be read as audio — check it's a supported format.";
   }

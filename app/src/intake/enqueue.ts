@@ -3,6 +3,7 @@ import { hashBytes } from './hash.ts';
 import { isMobileUA } from './mobile.ts';
 import { checkSpace } from './space.ts';
 import { decodeAudio, DecodeError } from './decode.ts';
+import { exceedsLengthCap } from './length.ts';
 import { getSong, getSeparation, getAllSeparations, putSeparation } from '../storage/db.ts';
 import { writeRecording } from '../storage/opfs.ts';
 import { nextQueueOrder } from '../separation/queue.ts';
@@ -14,6 +15,7 @@ export type EnqueueResult =
   | { kind: 'inflight'; id: string; title: string }
   | { kind: 'mobile' }
   | { kind: 'nospace'; needsBytes: number }
+  | { kind: 'toolong'; durationSec: number }
   | { kind: 'decode_failed'; message: string }
   | { kind: 'model_absent' }
   | { kind: 'model_downloading' };
@@ -71,6 +73,14 @@ export async function enqueue(file: File): Promise<EnqueueResult> {
       return { kind: 'decode_failed', message: e.message };
     }
     throw e;
+  }
+
+  // The length cap (§ length.ts) sits exactly here: after the decode, the
+  // first point durationSec exists, and before the OPFS write, so a refused
+  // Recording leaves no bytes and no catalogue row — and therefore never
+  // becomes a Separation with wreckage to dismiss.
+  if (exceedsLengthCap(durationSec)) {
+    return { kind: 'toolong', durationSec };
   }
 
   // OPFS write comes before the catalogue row so that a crash between the two

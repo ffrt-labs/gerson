@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   CPU_CONTENTION_NOTICE,
-  RESUME_NOTICE,
+  interruptedNotice,
   MODEL_CONSENT_BODY,
   MODEL_DOWNLOADING_NOTICE,
   causeAdvice,
@@ -17,9 +17,27 @@ describe('CPU_CONTENTION_NOTICE', () => {
   });
 });
 
-describe('RESUME_NOTICE', () => {
-  it('says resuming starts over rather than continuing', () => {
-    expect(RESUME_NOTICE.toLowerCase()).toMatch(/start(s|ing)? over|from the beginning/);
+describe('interruptedNotice', () => {
+  it('states the event without claiming to know how it happened', () => {
+    const msg = interruptedNotice(4 * 60).toLowerCase();
+    expect(msg).toMatch(/closed or reloaded/);
+    // The engine cannot tell a close from a reload, so the copy must not pick one.
+    expect(msg).not.toMatch(/you closed|you reloaded/);
+  });
+
+  it('states the honest cost, using the same estimate as the queued badge', () => {
+    expect(interruptedNotice(4 * 60)).toContain('9 minutes');
+    expect(interruptedNotice(7 * 60)).toContain('15 minutes');
+  });
+
+  it('never quotes prior progress — the row is written back at zero', () => {
+    expect(interruptedNotice(4 * 60)).not.toMatch(/%|progress|reached/i);
+  });
+
+  it('does not spend a sentence taking its own button label back', () => {
+    // The label is "Start over"; the notice it replaced existed only to
+    // explain that "Resume" did not, in fact, resume.
+    expect(interruptedNotice(4 * 60).toLowerCase()).not.toMatch(/resum/);
   });
 });
 
@@ -32,8 +50,15 @@ describe('causeAdvice', () => {
     expect(causeAdvice('storage').toLowerCase()).toMatch(/storage|space/);
   });
 
-  it('names unresponsiveness, not memory, for a stalled worker', () => {
-    expect(causeAdvice('stalled').toLowerCase()).toMatch(/respond|restart/);
+  it('names unresponsiveness for a stalled worker', () => {
+    expect(causeAdvice('stalled').toLowerCase()).toMatch(/respond/);
+  });
+
+  it('attributes a stalled failure to nothing — silence names no cause', () => {
+    // Memory pressure surfaces as a catchable RuntimeError under cause
+    // 'worker', which already owns the low-memory advice. A stalled failure
+    // is silence, and guessing at its cause sent users after the wrong fix.
+    expect(causeAdvice('stalled').toLowerCase()).not.toMatch(/memory|resources|device|file/);
   });
 
   it('names the file/format angle, not memory, for a decode failure', () => {

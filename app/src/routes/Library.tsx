@@ -7,9 +7,11 @@ import { ModelDownloadModal } from '../components/ModelDownloadModal.tsx';
 import { useLibrary } from '../hooks/useLibrary.ts';
 import { enqueue, type EnqueueResult } from '../intake/enqueue.ts';
 import { STEMS_SIZE_BYTES } from '../intake/space.ts';
+import { tooLongMessage } from '../intake/length.ts';
 import type { Role, Separation, Song } from '../domain/types.ts';
 import { queuePosition, orderedQueue } from '../separation/queue.ts';
-import { CPU_CONTENTION_NOTICE, RESUME_NOTICE, MODEL_DOWNLOADING_NOTICE, causeAdvice } from '../separation/copy.ts';
+import { CPU_CONTENTION_NOTICE, interruptedNotice, MODEL_DOWNLOADING_NOTICE, causeAdvice } from '../separation/copy.ts';
+import { estimateMinutes } from '../separation/estimate.ts';
 import { unzip } from '../import/unzip.ts';
 import { prepareImport, commitImport, type PrepareResult, type MappingCandidate } from '../import/importSet.ts';
 import type { DecodedCandidate } from '../import/decodeCandidate.ts';
@@ -32,16 +34,10 @@ interface MappingState {
   decoded: Record<string, DecodedCandidate>;
 }
 
-// ~1.28× song duration based on observed htdemucs timing on a single worker.
-function estimateMinutes(durationSec: number): number {
-  return Math.max(1, Math.round((durationSec * 1.28) / 60));
-}
-
 interface SeparationActions {
   onCancel: (id: string) => void;
   onRetry: (id: string) => void;
   onDismiss: (id: string) => void;
-  onResume: (id: string) => void;
   onReorder: (id: string, direction: 'up' | 'down') => void;
 }
 
@@ -114,9 +110,12 @@ function SeparationRow({
       <SeparationShell
         title={sep.title}
         badge={<span className="library-item-badge library-item-badge--interrupted">interrupted</span>}
-        detail={RESUME_NOTICE}
+        detail={interruptedNotice(sep.durationSec)}
         controls={<>
-          <button onClick={() => actions.onResume(sep.id)}>Resume</button>
+          {/* Not "Retry": interruption names an event, not a defect. The
+              user is choosing whether to spend the time again, not
+              repairing a fault. */}
+          <button onClick={() => actions.onRetry(sep.id)}>Start over</button>
           <button onClick={() => actions.onCancel(sep.id)}>Cancel</button>
         </>}
       />
@@ -235,6 +234,9 @@ function Notice({ result }: { result: EnqueueResult | null }) {
     case 'nospace':
       msg = `Not enough storage. ${formatBytes(result.needsBytes)} needed (${formatBytes(STEMS_SIZE_BYTES)} for stems plus the recording).`;
       break;
+    case 'toolong':
+      msg = tooLongMessage(result.durationSec);
+      break;
     case 'decode_failed':
       msg = result.message;
       break;
@@ -258,7 +260,6 @@ export function Library() {
     cancelSeparation,
     dismissSeparation,
     retrySeparation,
-    resumeSeparation,
     reorderSeparation,
     renameSong,
     deleteSong,
@@ -276,7 +277,6 @@ export function Library() {
     onCancel: cancelSeparation,
     onRetry: retrySeparation,
     onDismiss: dismissSeparation,
-    onResume: resumeSeparation,
     onReorder: reorderSeparation,
   };
   const [dragging, setDragging] = useState(false);

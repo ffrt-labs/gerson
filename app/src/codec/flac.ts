@@ -6,13 +6,9 @@
  * Vorbis comments (tags) survive a write→read round-trip.
  */
 
-import _flacMod from 'libflacjs/dist/libflac';
+import wasmUrl from 'libflacjs/dist/libflac.wasm.wasm?url';
 import type { VorbisCommentMetadata } from 'libflacjs/dist/index.d';
 import type { Flac } from 'libflacjs';
-
-// Under ESM interop the default import may be the module namespace wrapper.
-// Unwrap if necessary.
-const _flac = (_flacMod as unknown as { default?: Flac }).default ?? (_flacMod as unknown as Flac);
 
 export const SAMPLE_RATE = 44100;
 export const BITS_PER_SAMPLE = 16;
@@ -70,26 +66,43 @@ function asRaw(flac: Flac): LibFlacRaw {
 
 // ─── Lazy singleton initialisation ───────────────────────────────────────────
 
+// libflacjs ships two builds of libFLAC side by side: `libflac.js`, which is
+// wasm2js — the wasm transpiled *back* to plain JavaScript — and
+// `libflac.wasm.js`, the real thing. They are indistinguishable by name and
+// the wasm2js one is the shorter import, which is how it got picked. One
+// whole-stem process_interleaved took ≥14.5 minutes at 100% CPU in Chrome
+// under wasm2js, against 557 ms on the wasm build. Four Stems: a ~2.4 s tail.
+//
+// The .wasm sidecar is resolved by the bundler rather than by hand: `?url`
+// makes it a build input, so a libflacjs bump changes the content hash and
+// this URL together. A copy maintained by hand under public/ can drift from
+// the JS that loads it with no build-time signal at all.
+//
+// FLAC_SCRIPT_LOCATION is libflacjs's own hook into emscripten's locateFile,
+// and it is read while the module body runs — hence the dynamic import
+// below, which is the only way to set it first. In Node (the test suite)
+// emscripten resolves the sidecar itself and the global goes unread.
+async function loadFlac(): Promise<LibFlacRaw> {
+  (globalThis as { FLAC_SCRIPT_LOCATION?: Record<string, string> }).FLAC_SCRIPT_LOCATION = {
+    'libflac.wasm.wasm': wasmUrl,
+  };
+
+  const mod = await import('libflacjs/dist/libflac.wasm.js');
+  // Under ESM interop the namespace may wrap the real export in `default`.
+  const flac = (mod as unknown as { default?: Flac }).default ?? (mod as unknown as Flac);
+  const raw = asRaw(flac);
+
+  if (raw.isReady()) return raw;
+  return new Promise<LibFlacRaw>((resolve, reject) => {
+    raw.on('ready', () => resolve(raw));
+    raw.on('error', (e) => reject(new Error(`libflacjs failed to initialise: ${String(e)}`)));
+  });
+}
+
 let _flacPromise: Promise<LibFlacRaw> | null = null;
 
 function getFlac(): Promise<LibFlacRaw> {
-  if (!_flacPromise) {
-    _flacPromise = new Promise<LibFlacRaw>((resolve, reject) => {
-      try {
-        const raw = asRaw(_flac);
-        if (raw.isReady()) {
-          resolve(raw);
-        } else {
-          raw.on('ready', () => resolve(raw));
-          raw.on('error', (e) =>
-            reject(new Error(`libflacjs failed to initialise: ${String(e)}`))
-          );
-        }
-      } catch (e) {
-        reject(e);
-      }
-    });
-  }
+  _flacPromise ??= loadFlac();
   return _flacPromise;
 }
 

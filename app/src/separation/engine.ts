@@ -2,13 +2,24 @@
  * Separation engine — main-thread singleton that manages the single running
  * worker and dispatches the queue. Call start() once from main.tsx.
  *
- * One Separation runs at a time; the rest queue. Running two at once is
- * pointless when worker count is memory-bound — two jobs would each get a
- * share of the workers and both would take longer, at higher peak memory —
- * so there is exactly one worker, not a pool sized by device RAM.
+ * One Separation runs at a time, and the one worker that runs it lives only
+ * as long as there is work for it. Both halves are about what a worker costs
+ * in memory, which is the only thing that has ever constrained this.
+ *
+ * There is exactly one worker because a second one costs a 1.87 GB floor on
+ * top of the first — the wasm module's fixed allocation, paid again per
+ * worker — and inter-song parallelism was measured at 6.5 GB of live heap
+ * that never subsides. (Not, as this comment once claimed, because "two jobs
+ * would each get a share of the workers": there is no pool to share out, and
+ * two workers really would use two cores.)
+ *
+ * And that worker is terminated and replaced when the queue drains, because
+ * wasm memory never shrinks: after one 4-minute song it holds 3.08 GB, and
+ * at the 7:00 Recording cap ~3.98 GB, for the tab's lifetime. See
+ * recycleDrainedSlot().
  *
  * Every operation that reads-then-writes the catalogue (dispatching,
- * cancelling, retrying, resuming, reordering) runs through a single mutex so
+ * cancelling, retrying, reordering) runs through a single mutex so
  * two calls arriving close together — a job finishing while the user clicks
  * Cancel, two quick clicks on a reorder arrow — can't interleave their reads
  * and clobber each other's writes.
@@ -20,8 +31,57 @@ import { deleteSeparationBytes, readRecording } from '../storage/opfs.ts';
 import { orderedQueue, reorderQueue, nextQueueOrder } from './queue.ts';
 import { isStalled } from './watchdog.ts';
 import { decodeRecording } from './decode.ts';
+import { exceedsLengthCap, tooLongMessage } from '../intake/length.ts';
 
 // ─── Public event types ───────────────────────────────────────────────────────
+
+/**
+ * Everything the worker can post, as a closed union.
+ *
+ * Three of these come straight from the wasm module, not from worker.ts:
+ * demucs.js's `sendProgressUpdate` posts PROGRESS_UPDATE or, under batch
+ * mode, PROGRESS_UPDATE_BATCH; `callWriteWasmLog` posts WASM_LOG. All three
+ * appear exactly once in `wasm/dist/demucs.js`, so the vocabulary is closed
+ * and fully known. (`wasm/README.md`'s message table documents only
+ * PROGRESS_UPDATE — knowingly left incomplete; this type is the record.)
+ *
+ * The handler below matches on this union and ignores anything else. The
+ * inversion is the point: a message the engine does not recognise must be
+ * inert by construction, never fall through to the path that ends a job.
+ * Special-casing WASM_LOG alone would not do — PROGRESS_UPDATE_BATCH is a
+ * second kind sitting behind worker.ts's hardcoded `batchMode: false`, and
+ * a whitelist leaves that trap armed for whoever flips the flag.
+ */
+type WorkerMessage =
+  | { kind: 'progress'; progress: number }
+  | { kind: 'log' }
+  | { kind: 'done'; song: Song }
+  | { kind: 'failed'; error: string | null; cause: SeparationFailureCause; failedAt: number };
+
+function classify(data: unknown): WorkerMessage | null {
+  if (typeof data !== 'object' || data === null) return null;
+  const d = data as Record<string, unknown>;
+
+  switch (d.msg) {
+    case 'PROGRESS_UPDATE':
+    case 'PROGRESS_UPDATE_BATCH':
+      return { kind: 'progress', progress: typeof d.data === 'number' ? d.data : 0 };
+    case 'WASM_LOG':
+      return { kind: 'log' };
+  }
+
+  if (d.type === 'done' && d.song) return { kind: 'done', song: d.song as Song };
+  if (d.type === 'failed') {
+    return {
+      kind: 'failed',
+      error: typeof d.error === 'string' ? d.error : null,
+      cause: (d.cause as SeparationFailureCause | undefined) ?? 'worker',
+      failedAt: typeof d.failedAt === 'number' ? d.failedAt : Date.now(),
+    };
+  }
+
+  return null;
+}
 
 export type EngineEvent =
   | { type: 'progress'; id: string; progress: number }
@@ -41,7 +101,10 @@ const WORKER_CRASH_MESSAGE =
 // thread never arrives. Left undetected, either leaves the job (and the
 // whole queue behind it, since there's one Slot) stuck forever. See
 // pollCurrentJob() below.
-const STALL_MESSAGE = 'The separation worker stopped responding and was restarted.';
+// Stated in the user's terms. "The worker was restarted" describes the slot
+// being replaced — an internal bookkeeping step that is neither something the
+// user did nor something they got.
+const STALL_MESSAGE = 'The separation stopped responding and was given up on.';
 const STALL_CHECK_INTERVAL_MS = 30 * 1000;
 
 // ─── Internal state ───────────────────────────────────────────────────────────
@@ -50,7 +113,9 @@ interface Slot {
   worker: Worker;
   busy: boolean;
   job: Separation | null; // the Separation currently dispatched to this worker
-  lastActivityAt: number; // last dispatch or PROGRESS_UPDATE; watchdog basis
+  lastActivityAt: number; // last dispatch or worker message; watchdog basis
+  lastEmittedPercent: number; // coalesces progress to what the UI can show
+  hasRun: boolean; // has this worker ever been handed a job — i.e. holds a heap
 }
 
 let current: Slot | null = null;
@@ -130,13 +195,21 @@ export async function dismiss(id: string): Promise<void> {
 }
 
 /**
- * Retries a failed Separation from scratch, reusing its retained Recording.
- * Joins the back of the queue.
+ * Runs a Separation again from scratch, reusing its retained Recording, at
+ * the back of the queue. Serves both surfaces that offer it — Retry on a
+ * failed Separation, "Start over" on an interrupted one.
+ *
+ * This used to be two functions. `resume()` cleared the parked flag and
+ * `retry()` cleared the failure fields, but both did the same thing —
+ * nextQueueOrder, then dispatch — and neither could do anything else, since
+ * there is no mid-inference resume to offer. Two entry points behind one
+ * label is the state that produced a notice whose whole job was to take the
+ * "Resume" label back; one operation that clears everything ends it.
  */
 export async function retry(id: string): Promise<void> {
   await locked(async () => {
     const sep = await getSeparation(id);
-    if (!sep || sep.status !== 'failed') return;
+    if (!sep || (sep.status !== 'failed' && !sep.interrupted)) return;
 
     const all = await getAllSeparations();
     const updated: Separation = {
@@ -149,23 +222,6 @@ export async function retry(id: string): Promise<void> {
       interrupted: false,
       queueOrder: nextQueueOrder(all),
     };
-    await putSeparation(updated);
-    emit({ type: 'updated', separation: updated });
-  });
-  dispatch();
-}
-
-/**
- * Resumes an interrupted Separation. Starts over from scratch — there is no
- * mid-inference resume — and joins the back of the queue.
- */
-export async function resume(id: string): Promise<void> {
-  await locked(async () => {
-    const sep = await getSeparation(id);
-    if (!sep || !sep.interrupted) return;
-
-    const all = await getAllSeparations();
-    const updated: Separation = { ...sep, interrupted: false, queueOrder: nextQueueOrder(all) };
     await putSeparation(updated);
     emit({ type: 'updated', separation: updated });
   });
@@ -207,46 +263,61 @@ function createSlot(): Slot {
     new URL('./worker.ts', import.meta.url),
     { type: 'module' },
   );
-  const slot: Slot = { worker, busy: false, job: null, lastActivityAt: Date.now() };
+  const slot: Slot = {
+    worker, busy: false, job: null, lastActivityAt: Date.now(),
+    lastEmittedPercent: -1, hasRun: false,
+  };
 
   worker.addEventListener('message', (evt: MessageEvent) => {
     // Ignore messages from a worker that has since been replaced (e.g. by
     // cancel()) — terminate() may not prevent an already in-flight message.
     if (current !== slot) return;
 
-    const data = evt.data as {
-      msg?: string;
-      data?: number;
-      type?: string;
-      song?: Song;
-      error?: string;
-      cause?: SeparationFailureCause;
-      failedAt?: number;
-    };
+    const message = classify(evt.data);
+    if (!message) return; // unrecognised: inert, by construction
 
-    if (data?.msg === 'PROGRESS_UPDATE') {
-      slot.lastActivityAt = Date.now();
-      if (slot.job) emit({ type: 'progress', id: slot.job.id, progress: data.data ?? 0 });
-      return;
-    }
+    // Every recognised message is proof of life, terminal ones included.
+    slot.lastActivityAt = Date.now();
 
-    const job = slot.job;
-    slot.busy = false;
-    slot.job = null;
+    switch (message.kind) {
+      case 'log':
+        return;
 
-    if (data?.type === 'done' && data.song) {
-      if (job) emit({ type: 'done', id: job.id, song: data.song });
-      dispatch();
-    } else if (data?.type === 'failed' && job) {
-      const failed: Separation = {
-        ...job,
-        status: 'failed',
-        error: data.error ?? null,
-        cause: data.cause ?? 'worker',
-        failedAt: data.failedAt ?? Date.now(),
-      };
-      emit({ type: 'failed', separation: failed });
-      dispatch();
+      case 'progress': {
+        if (!slot.job) return;
+        // ~3.6 progress messages a second, ~1800 over a Separation, against a
+        // UI that renders whole percent. Emitting each one would drive a React
+        // re-render per message for a value that changed in the fourth decimal
+        // place — so only a change the user could see is published.
+        const percent = Math.round(message.progress * 100);
+        if (percent === slot.lastEmittedPercent) return;
+        slot.lastEmittedPercent = percent;
+        emit({ type: 'progress', id: slot.job.id, progress: message.progress });
+        return;
+      }
+
+      case 'done': {
+        const job = releaseJob(slot);
+        if (job) emit({ type: 'done', id: job.id, song: message.song });
+        dispatch();
+        return;
+      }
+
+      case 'failed': {
+        const job = releaseJob(slot);
+        if (job) {
+          const failed: Separation = {
+            ...job,
+            status: 'failed',
+            error: message.error,
+            cause: message.cause,
+            failedAt: message.failedAt,
+          };
+          emit({ type: 'failed', separation: failed });
+        }
+        dispatch();
+        return;
+      }
     }
   });
 
@@ -258,6 +329,16 @@ function createSlot(): Slot {
   });
 
   return slot;
+}
+
+// Hands the slot's job back and frees it for the next one. The single place
+// `busy`/`job` are cleared on a normal outcome, so "the slot is free" and
+// "the job is finished" can't drift apart.
+function releaseJob(slot: Slot): Separation | null {
+  const job = slot.job;
+  slot.busy = false;
+  slot.job = null;
+  return job;
 }
 
 // Shared by the 'error' listener above and pollCurrentJob()'s stall check
@@ -294,8 +375,7 @@ async function pollCurrentJob(): Promise<void> {
   if (current !== slot || slot.job !== job) return;
 
   if (persisted?.status === 'failed') {
-    slot.busy = false;
-    slot.job = null;
+    releaseJob(slot);
     emit({ type: 'failed', separation: persisted });
     dispatch();
     return;
@@ -316,8 +396,19 @@ function replaceSlot(): void {
   current = createSlot();
 }
 
+// Why 'busy' and 'drained' are distinct rather than one falsy "no job":
+// the busy case is the ordinary one — addToQueue() calls dispatch() while a
+// job is running — and it must leave that job strictly alone. Only a genuine
+// drain is grounds for taking the worker away.
+type ClaimResult =
+  | { kind: 'claimed'; job: Separation }
+  | { kind: 'busy' }
+  | { kind: 'drained' };
+
 function dispatch(): void {
-  void locked(claimAndMarkRunning).then(job => { if (job) void runJob(job); });
+  void locked(claimNext).then(result => {
+    if (result.kind === 'claimed') void runJob(result.job);
+  });
 }
 
 // Claims the next queued Separation for the current slot and commits its
@@ -327,21 +418,56 @@ function dispatch(): void {
 // cancelled job can be resurrected by whichever one lands last. Decoding
 // (see runJob) runs after the lock is released, so it can't hold up
 // cancel/reorder/retry for however long a large file takes to decode.
-async function claimAndMarkRunning(): Promise<Separation | null> {
-  if (!current || current.busy) return null; // one Separation runs at a time
+//
+// Recycling the drained worker happens here, under the same lock, for the
+// same reason: "the queue is empty" is a fact about the catalogue, and it
+// must not go stale between the read and the terminate().
+async function claimNext(): Promise<ClaimResult> {
+  const slot = current;
+  if (!slot || slot.busy) return { kind: 'busy' }; // one Separation runs at a time
 
   const all = await getAllSeparations();
+  // The slot moved on while that read was in flight.
+  if (current !== slot || slot.busy) return { kind: 'busy' };
+
+  // orderedQueue excludes interrupted rows — correct here: an interrupted
+  // Separation has no worker of its own to protect, and holds no heap.
   const next = orderedQueue(all)[0];
-  if (!next) return null;
+  if (!next) {
+    recycleDrainedSlot(slot);
+    return { kind: 'drained' };
+  }
 
   const running: Separation = { ...next, status: 'running', progress: 0 };
-  current.busy = true;
-  current.job = running;
-  current.lastActivityAt = Date.now();
+  slot.busy = true;
+  slot.hasRun = true;
+  slot.job = running;
+  slot.lastActivityAt = Date.now();
+  slot.lastEmittedPercent = -1;
 
   await putSeparation(running);
   emit({ type: 'updated', separation: running });
-  return running;
+  return { kind: 'claimed', job: running };
+}
+
+// A worker's wasm heap never subsides — 3.08 GB after one 4-minute song,
+// ~3.98 GB at the 7:00 cap, held for the tab's lifetime with nothing to
+// reclaim it. Terminating the drained worker is the only way to give that
+// back, and it's the same move cancel() already makes.
+//
+// Terminate-and-replace, not drop-to-null, so `current` stays non-null and
+// every identity guard in this file stays trivially correct. The
+// replacement holds nothing: worker.ts's ensureReady() loads the module and
+// the weights lazily, on the first run.
+//
+// The has-run gate makes the predicate exactly "this worker holds a heap" —
+// without it, start()'s own dispatch() on an empty queue would terminate the
+// worker it just created, on every load. The cost is 12 s of setup on the
+// next job, ~2.3% of an 8:43 run, and only after an idle gap: a full queue
+// never drains between jobs.
+function recycleDrainedSlot(slot: Slot): void {
+  if (!slot.hasRun) return;
+  terminateSlot();
 }
 
 // Decodes the claimed job's Recording and dispatches it to the worker.
@@ -351,7 +477,24 @@ async function claimAndMarkRunning(): Promise<Separation | null> {
 // the worker.
 async function runJob(job: Separation): Promise<void> {
   const slot = current;
-  if (!slot) return;
+  // Same guard the decode path below relies on: dispatch() resolves outside
+  // the mutex, so a cancel() between the claim and here has already deleted
+  // this Separation, and touching it now would resurrect wreckage.
+  if (!slot || slot.job !== job) return;
+
+  // The length cap again, this time before the worker is handed anything.
+  // Intake (intake/length.ts) refuses over-length Recordings up front, so
+  // this exists solely for rows queued before the cap landed: left alone
+  // such a row would spend 9–15 minutes reaching the wasm's memory abort and
+  // then report a generic RuntimeError rather than a length problem. Cause
+  // 'worker' because that is what this is — the memory limit, caught early
+  // — and the error text names the length so the row doesn't say "low on
+  // memory, try closing tabs" about a song that will never fit.
+  if (exceedsLengthCap(job.durationSec)) {
+    releaseJob(slot);
+    void reportFailure(job, 'worker', tooLongMessage(job.durationSec));
+    return;
+  }
 
   try {
     const bytes = await readRecording(job.uploadPath);
