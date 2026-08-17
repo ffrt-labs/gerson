@@ -7,6 +7,7 @@ import {
   panViewport,
   isPositionVisible,
   followViewport,
+  followIfNeeded,
   type Viewport,
 } from '../viewport.ts';
 
@@ -148,5 +149,72 @@ describe('followViewport', () => {
   it('handles a backward jump (e.g. a loop wrap) the same way as a forward one', () => {
     const v: Viewport = { startSec: 100, durationSec: 20 };
     expect(followViewport(v, 5, 240, 1)).toEqual({ startSec: 5, durationSec: 20 });
+  });
+});
+
+describe('clampViewport — reference identity', () => {
+  it('returns the same object when clamping changes nothing, so React can bail out', () => {
+    const v: Viewport = { startSec: 10, durationSec: 20 };
+    expect(clampViewport(v, 240, 1)).toBe(v);
+  });
+
+  it('returns a new object when it actually clamps', () => {
+    const v: Viewport = { startSec: 500, durationSec: 20 };
+    expect(clampViewport(v, 240, 1)).not.toBe(v);
+  });
+});
+
+describe('followIfNeeded — the auto-follow decision', () => {
+  const song = 240;
+  const min = 1;
+
+  it('returns null when the playhead is already visible', () => {
+    expect(followIfNeeded({ startSec: 0, durationSec: 20 }, 5, song, min)).toBe(null);
+  });
+
+  it('follows when the playhead has left the viewport', () => {
+    expect(followIfNeeded({ startSec: 0, durationSec: 20 }, 50, song, min)).toEqual({
+      startSec: 50,
+      durationSec: 20,
+    });
+  });
+
+  // #87: during the first output-latency window after Play, the playhead is
+  // legitimately negative — and clampViewport floors startSec at 0, so no
+  // viewport can ever contain it. Following anyway produced a fresh-but-equal
+  // viewport on every render, which is what crashed the Player route.
+  it('returns null for a negative playhead, which no viewport can reach', () => {
+    expect(followIfNeeded({ startSec: 0, durationSec: song }, -0.058, song, min)).toBe(null);
+  });
+
+  it('returns null for a playhead past the end of the song', () => {
+    expect(followIfNeeded({ startSec: 220, durationSec: 20 }, 300, song, min)).toBe(null);
+  });
+
+  // The termination guarantee, stated directly: WaveformStack applies this
+  // during render, so a second call that did NOT return null would re-render
+  // forever. Every hostile input the component can actually be handed.
+  describe('is idempotent — a second call with the same inputs returns null', () => {
+    const cases: Array<[string, Viewport, number, number, number]> = [
+      ['negative playhead (#87)', { startSec: 0, durationSec: song }, -0.058, song, min],
+      ['playhead past the song end', { startSec: 0, durationSec: 20 }, 300, song, min],
+      ['NaN playhead', { startSec: 0, durationSec: 20 }, NaN, song, min],
+      ['Infinite playhead', { startSec: 0, durationSec: 20 }, Infinity, song, min],
+      ['-Infinite playhead', { startSec: 0, durationSec: 20 }, -Infinity, song, min],
+      ['NaN song duration', { startSec: 0, durationSec: 20 }, 5, NaN, min],
+      ['NaN min duration (NaN sample rate)', { startSec: 0, durationSec: 20 }, 5, song, NaN],
+      ['NaN viewport', { startSec: NaN, durationSec: NaN }, 5, song, min],
+      ['zero-duration song', { startSec: 0, durationSec: 0 }, 5, 0, 0],
+      ['zero-width container (min 0)', { startSec: 0, durationSec: song }, 300, song, 0],
+      ['min duration wider than the song', { startSec: 0, durationSec: 20 }, 300, 10, 60],
+      ['ordinary forward jump', { startSec: 0, durationSec: 20 }, 50, song, min],
+      ['ordinary backward jump', { startSec: 100, durationSec: 20 }, 5, song, min],
+    ];
+
+    it.each(cases)('%s', (_name, viewport, position, songDurationSec, minDurationSec) => {
+      const first = followIfNeeded(viewport, position, songDurationSec, minDurationSec);
+      if (first === null) return;
+      expect(followIfNeeded(first, position, songDurationSec, minDurationSec)).toBe(null);
+    });
   });
 });
