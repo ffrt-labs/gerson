@@ -4,6 +4,7 @@ import { JobStatusBar } from '../components/JobStatusBar';
 import { getSong } from '../storage/db.ts';
 import { savePractice } from '../library/engine.ts';
 import { createTransport, type Transport } from '../playback/transport.ts';
+import { createPlaybackContext, sampleRateMismatch } from '../playback/context.ts';
 import { songStemLoader } from '../playback/loadSong.ts';
 import { playbackMemoryBytes, exceedsBudget, DESKTOP_MEMORY_BUDGET_BYTES } from '../playback/memory.ts';
 import { getMonoPreference, setMonoPreference } from '../playback/monoPreference.ts';
@@ -147,7 +148,16 @@ export function Player() {
     let cancelled = false;
     const songId = song.id;
 
-    const audioContext = new AudioContext();
+    // Pinned to the pipeline's sample rate — an unpinned context adopts the
+    // output device rate and plays the 44.1kHz stems 8.84% fast and sharp
+    // (#89). See playback/context.ts for why there is no fallback.
+    const audioContext = createPlaybackContext();
+    if (sampleRateMismatch(audioContext.sampleRate, song.sampleRate)) {
+      console.warn(
+        `[playback] AudioContext is ${audioContext.sampleRate}Hz but Song "${song.id}" is ` +
+          `${song.sampleRate}Hz — playback will be off by ${(audioContext.sampleRate / song.sampleRate).toFixed(4)}x.`,
+      );
+    }
     createTransport(audioContext, songStemLoader(song, mono), mono)
       .then(async transport => {
         if (cancelled) {

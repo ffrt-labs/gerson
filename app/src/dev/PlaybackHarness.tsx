@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import type { Role } from '../domain/types.ts';
 import { createTransport, type StemBuffers, type Transport } from '../playback/transport.ts';
+import { createPlaybackContext } from '../playback/context.ts';
 
 // Dev-only route for issue #23: exercises the four-stretcher transport
 // wrapper against the fixture stems, with no storage layer and no Song
@@ -40,8 +41,11 @@ export function PlaybackHarness() {
     setError(null);
     try {
       // Created synchronously in the click handler so it starts 'running'
-      // under the browser's user-gesture autoplay policy.
-      const audioContext = new AudioContext();
+      // under the browser's user-gesture autoplay policy. Pinned to the
+      // pipeline's rate for the same reason the Player is (#89) — the
+      // fixtures decode at 44100, and an unpinned context here would
+      // reproduce the very bug this harness exists to catch.
+      const audioContext = createPlaybackContext();
 
       // fetchStem is handed straight to createTransport as the StemLoader —
       // it fetches and decodes one role at a time, only as each is needed,
