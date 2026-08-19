@@ -10,6 +10,8 @@ export interface Canvas2DLike {
   moveTo(x: number, y: number): void;
   lineTo(x: number, y: number): void;
   stroke(): void;
+  closePath(): void;
+  fill(): void;
   fillRect(x: number, y: number, w: number, h: number): void;
   // Widened to match the real CanvasRenderingContext2D's own property type
   // (string | CanvasGradient | CanvasPattern) — production code only ever

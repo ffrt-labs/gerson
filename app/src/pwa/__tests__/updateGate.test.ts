@@ -36,7 +36,7 @@ describe('hasActiveSeparation', () => {
   });
 
   // The gate asks "would reloading destroy work?" — not "is there a row the
-  // user should see", which is isActive's question and JobStatusBar's.
+  // user should see", which is isActive's question and the footer's.
   it('is false for an interrupted separation, which has no worker to protect', () => {
     const sep = makeSeparation({ id: 'a', status: 'queued', interrupted: true });
     expect(hasActiveSeparation([sep])).toBe(false);

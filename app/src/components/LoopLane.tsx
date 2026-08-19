@@ -14,12 +14,18 @@ import {
   type LoopDragMode,
 } from '../waveform/loop.ts';
 
-export const LOOP_LANE_HEIGHT_PX = 20;
+export const LOOP_LANE_HEIGHT_PX = 30;
+
+// The amber A/B markers. 16px wide, each containing its own letter as a
+// flex-centred child — a letter positioned separately from the handle
+// drifts off the amber as the region moves and becomes illegible against
+// the waveform behind it.
+const HANDLE_WIDTH_PX = 16;
 
 // A grab within this many CSS pixels of an edge resizes it instead of
 // starting a new region or moving the middle — a fixed screen-space
-// tolerance (like WaveformStack's own DRAG_THRESHOLD_PX), not one that
-// shrinks with zoom, so the edge stays just as grabbable at any span.
+// tolerance (like the Stage's own drag threshold), not one that shrinks
+// with zoom, so the edge stays just as grabbable at any span.
 const EDGE_GRAB_PX = 8;
 
 interface LoopLaneProps {
@@ -39,11 +45,10 @@ interface DragState {
 }
 
 // The dedicated loop lane (§5.4): a drag here is the only way to create,
-// resize, or move the loop region — the four waveform rows underneath stay
-// click-to-seek, unambiguous, because they never see this component's drag
-// handlers. WaveformOverlay separately renders the same region as
-// read-only shading through all four rows; this canvas is the interactive
-// one, pixel-aligned with those rows by sharing their viewport and widthPx.
+// resize, or move the loop region — the waveform underneath stays
+// click-to-seek and drag-to-scrub, unambiguous, because it never sees this
+// component's drag handlers. The canvas draws the region fill; the two
+// handles are DOM children over it (see HANDLE_WIDTH_PX).
 export function LoopLane({ loop, loopEnabled, viewport, widthPx, durationSec, dpr, onChangeLoop }: LoopLaneProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const physicalWidth = Math.round(widthPx * dpr);
@@ -113,13 +118,37 @@ export function LoopLane({ loop, loopEnabled, viewport, widthPx, durationSec, dp
     window.addEventListener('mouseup', handleUp);
   };
 
+  // In CSS pixels — the handles are DOM, not canvas, so they use the same
+  // space the lane's own box does.
+  const startX = loop ? playheadX(loop.startSec, viewport, widthPx) : 0;
+  const endX = loop ? playheadX(loop.endSec, viewport, widthPx) : 0;
+  const showHandle = (x: number) => loop !== null && x >= 0 && x <= widthPx;
+
   return (
     <div
       className="loop-lane"
-      style={{ width: widthPx, height: LOOP_LANE_HEIGHT_PX }}
+      style={{ height: LOOP_LANE_HEIGHT_PX }}
       onMouseDown={handleMouseDown}
     >
       <canvas ref={canvasRef} className="loop-lane-canvas" style={{ width: widthPx, height: LOOP_LANE_HEIGHT_PX }} />
+      {showHandle(startX) && (
+        <div
+          className="loop-lane-handle mono"
+          style={{ left: startX - HANDLE_WIDTH_PX / 2, width: HANDLE_WIDTH_PX }}
+          aria-hidden="true"
+        >
+          A
+        </div>
+      )}
+      {showHandle(endX) && (
+        <div
+          className="loop-lane-handle mono"
+          style={{ left: endX - HANDLE_WIDTH_PX / 2, width: HANDLE_WIDTH_PX }}
+          aria-hidden="true"
+        >
+          B
+        </div>
+      )}
     </div>
   );
 }

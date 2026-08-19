@@ -1,9 +1,13 @@
 import { memo, useEffect, useRef } from 'react';
-import { drawPlayhead, drawLoopShading } from '../waveform/overlay.ts';
+import { clearOverlay, drawPlayhead, drawLoopFocus } from '../waveform/overlay.ts';
 import { playheadX } from '../waveform/geometry.ts';
 import { sizeCanvas } from '../waveform/sizeCanvas.ts';
 import type { Viewport } from '../waveform/viewport.ts';
 import type { LoopRegion } from '../domain/types.ts';
+
+// CSS pixels, scaled to device pixels below.
+const PLAYHEAD_WIDTH_PX = 2;
+const PLAYHEAD_CAP_PX = 7;
 
 interface WaveformOverlayProps {
   position: number;
@@ -15,15 +19,16 @@ interface WaveformOverlayProps {
   loopEnabled: boolean;
 }
 
-// One absolutely-positioned canvas spanning all four rows (§5.3): the
-// playhead and the loop region are both song-level, not track-level, so
-// they live apart from the four waveform bitmaps. This is the 60fps path —
-// it redraws on every position or viewport change, but never touches a
-// waveform canvas. When the playhead is outside the current viewport,
-// playheadX maps it outside the canvas too, so it simply doesn't appear
-// rather than being pinned to an edge it isn't at — the loop shading clips
-// the same way. The region is drawn here read-only; it's only ever
-// draggable from the dedicated LoopLane above the rows (§5.4).
+// One absolutely-positioned canvas over the Stage waveform (§5.3): the
+// playhead and the loop region are both song-level, not stem-level, so they
+// live apart from the waveform bitmap. This is the 60fps path — it redraws
+// on every position or viewport change, but never touches the waveform
+// canvas.
+//
+// Paint order is the point of the three separate calls: clear, then the
+// loop focus (which scrims everything outside the region), then the
+// playhead on top — a playhead drawn under the scrim would fade out
+// exactly when the user is watching it approach the loop's edge.
 export const WaveformOverlay = memo(function WaveformOverlay({
   position,
   viewport,
@@ -43,19 +48,23 @@ export const WaveformOverlay = memo(function WaveformOverlay({
     if (!canvas) return;
     const ctx = sizeCanvas(canvas, physicalWidth, physicalHeight);
     if (!ctx) return;
-    ctx.strokeStyle = '#d9a441';
-    ctx.lineWidth = Math.max(1, dpr);
 
-    // drawPlayhead clears the canvas — always called first, so the shading
-    // composited after it isn't wiped by that clear.
-    const x = playheadX(position, viewport, physicalWidth);
-    drawPlayhead(ctx, x, physicalWidth, physicalHeight);
+    clearOverlay(ctx, physicalWidth, physicalHeight);
 
     if (loop) {
       const startX = playheadX(loop.startSec, viewport, physicalWidth);
       const endX = playheadX(loop.endSec, viewport, physicalWidth);
-      drawLoopShading(ctx, startX, endX, physicalWidth, physicalHeight, loopEnabled);
+      drawLoopFocus(ctx, startX, endX, physicalWidth, physicalHeight, loopEnabled);
     }
+
+    drawPlayhead(
+      ctx,
+      playheadX(position, viewport, physicalWidth),
+      physicalWidth,
+      physicalHeight,
+      PLAYHEAD_WIDTH_PX * dpr,
+      PLAYHEAD_CAP_PX * dpr,
+    );
   }, [position, viewport, physicalWidth, physicalHeight, dpr, loop, loopEnabled]);
 
   return (

@@ -191,7 +191,7 @@ describe('followIfNeeded — the auto-follow decision', () => {
     expect(followIfNeeded({ startSec: 220, durationSec: 20 }, 300, song, min)).toBe(null);
   });
 
-  // The termination guarantee, stated directly: WaveformStack applies this
+  // The termination guarantee, stated directly: WaveformStage applies this
   // during render, so a second call that did NOT return null would re-render
   // forever. Every hostile input the component can actually be handed.
   describe('is idempotent — a second call with the same inputs returns null', () => {

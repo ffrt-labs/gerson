@@ -1,33 +1,74 @@
 /**
- * Draws the overlay canvas that spans all four stem rows (§5.3): the
- * playhead line and the loop-region shading, redrawn together every time
- * either changes. This is the 60fps path (the playhead moves every frame),
- * and it never touches a waveform bitmap (those four canvases redraw only
- * on a click-to-seek gesture or a track-state change). The region itself is
- * only ever draggable from the dedicated lane (LoopLane) — this canvas just
- * shows it "shaded down through all four waveforms" (§5.4).
+ * Draws the overlay canvas that spans the Stage waveform (§5.3): the
+ * playhead and the loop focus, redrawn together every time either changes.
+ * This is the 60fps path (the playhead moves every frame), and it never
+ * touches a waveform bitmap.
+ *
+ * The three steps are separate exports rather than one call because paint
+ * order is load-bearing and belongs to the caller: clear, then the loop
+ * focus, then the playhead on top of it. (Folding the clear into
+ * drawPlayhead, as this module used to, meant anything composited first was
+ * wiped — which is why the clear now stands alone.)
+ *
+ * The region is drawn here read-only; it is only ever draggable from the
+ * dedicated lane above the waveform (§5.4).
  */
 
 import type { Canvas2DLike } from './canvas.ts';
+import {
+  WAVE_SOLO,
+  LOOP_REGION_WASH,
+  LOOP_REGION_WASH_OFF,
+  OUTSIDE_LOOP_SCRIM,
+} from './colors.ts';
 
-export function drawPlayhead(ctx: Canvas2DLike, xPx: number, widthPx: number, heightPx: number): void {
+export function clearOverlay(ctx: Canvas2DLike, widthPx: number, heightPx: number): void {
   ctx.clearRect(0, 0, widthPx, heightPx);
-  if (heightPx <= 0) return;
-
-  ctx.beginPath();
-  ctx.moveTo(xPx + 0.5, 0);
-  ctx.lineTo(xPx + 0.5, heightPx);
-  ctx.stroke();
 }
 
-// Fills the loop region across the overlay's full height, clipped to the
-// canvas — a region that runs off either edge of the current viewport
-// (common while zoomed in) draws only its visible slice rather than
-// distorting or wrapping. Dimmer when the loop is toggled off, so the
-// region reads as "still set, not currently repeating" (§5.4: toggling off
-// must not look like losing it). Composited after drawPlayhead, which owns
-// the canvas clear — this call never clears on its own.
-export function drawLoopShading(
+/**
+ * The playhead: a lime bar with a small triangular cap at the top, so its
+ * position is readable at a glance even where it crosses a dense passage of
+ * waveform. Both dimensions are passed in device pixels by the caller,
+ * which is the only place that knows the devicePixelRatio.
+ *
+ * A playhead outside the viewport maps outside the canvas, and simply does
+ * not draw — never pinned to an edge it is not at.
+ */
+export function drawPlayhead(
+  ctx: Canvas2DLike,
+  xPx: number,
+  widthPx: number,
+  heightPx: number,
+  lineWidthPx: number,
+  capHeightPx: number,
+): void {
+  if (heightPx <= 0) return;
+  if (xPx < 0 || xPx > widthPx) return;
+
+  ctx.fillStyle = WAVE_SOLO;
+  ctx.fillRect(xPx - lineWidthPx / 2, 0, lineWidthPx, heightPx);
+
+  ctx.beginPath();
+  ctx.moveTo(xPx - capHeightPx, 0);
+  ctx.lineTo(xPx + capHeightPx, 0);
+  ctx.lineTo(xPx, capHeightPx);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/**
+ * The loop as the focus of the waveform ("both" shading from the handoff,
+ * and the intended default): everything *outside* the region is scrimmed
+ * back so the waveform there reads at about a third of its strength, and
+ * the region itself takes an amber wash.
+ *
+ * When the loop is set but not repeating, the scrim is dropped entirely and
+ * only a fainter wash remains — toggling off must not look like losing the
+ * region, but it must also not keep dimming a Song that is playing right
+ * through the region.
+ */
+export function drawLoopFocus(
   ctx: Canvas2DLike,
   startXPx: number,
   endXPx: number,
@@ -41,6 +82,13 @@ export function drawLoopShading(
   const right = Math.min(widthPx, Math.max(startXPx, endXPx));
   if (right <= left) return;
 
-  ctx.fillStyle = enabled ? 'rgba(217, 164, 65, 0.22)' : 'rgba(217, 164, 65, 0.10)';
+  if (enabled) {
+    ctx.fillStyle = OUTSIDE_LOOP_SCRIM;
+    // A side the region runs off has nothing outside it to scrim.
+    if (left > 0) ctx.fillRect(0, 0, left, heightPx);
+    if (right < widthPx) ctx.fillRect(right, 0, widthPx - right, heightPx);
+  }
+
+  ctx.fillStyle = enabled ? LOOP_REGION_WASH : LOOP_REGION_WASH_OFF;
   ctx.fillRect(left, 0, right - left, heightPx);
 }

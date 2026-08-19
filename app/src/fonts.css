@@ -1,0 +1,65 @@
+/*
+ * Self-hosted webfaces — Sora (prose) and JetBrains Mono (every number and
+ * uppercase legend), plus the subsetted Material Symbols Rounded icon set.
+ *
+ * The handoff specifies Google Fonts <link> tags. They are self-hosted here
+ * instead: Gerson tells the user "ON THIS DEVICE" on every screen and calls
+ * the model download "the only time Gerson uses the network", and a webfont
+ * request to fonts.gstatic.com on every cold load would make that copy a
+ * lie. The files are the ones Google serves, latin subset, with the icon
+ * font subsetted to the handoff's glyph list — 76 kB in total, precached by
+ * the service worker so the design survives offline.
+ *
+ * Both text families are *variable* fonts: Google serves one file per
+ * family covering the whole weight axis, so each is declared once with a
+ * weight range rather than once per weight against the same bytes. The
+ * design uses Sora 300-700 and Mono 400-700; a range lets the browser sit
+ * the axis exactly on whichever of those a rule asks for.
+ */
+
+@font-face {
+  font-family: 'Sora';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/fonts/sora.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* `display: block` on the icon face is deliberate: an unstyled ligature
+   name ("play_arrow") flashing as text is worse than a brief blank, since
+   these sit inside 40px buttons. */
+@font-face {
+  font-family: 'Material Symbols Rounded';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/material-symbols-rounded.woff2') format('woff2');
+}
+
+.icon {
+  font-family: 'Material Symbols Rounded';
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  font-size: 20px;
+  flex: none;
+  user-select: none;
+}

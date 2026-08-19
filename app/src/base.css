@@ -1,0 +1,461 @@
+/*
+ * Reset, type defaults, and the shared control primitives — the button
+ * tiers, chips, legends, switches and sliders that every screen composes
+ * from. Screen-specific rules live in index.css alongside them.
+ *
+ * The tier of a button is legible from its shape alone (handoff "Buttons"):
+ *   .btn--primary  lime face, no border      — one per screen
+ *   .btn--secondary control face + inset top highlight — the pressable face
+ *   .btn--ghost    transparent + hairline border
+ *   .is-engaged    on a secondary, swaps the face for lime (or amber, with
+ *                  .is-engaged--loop) and adds the 3px ring
+ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  background: var(--surface-app);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+/* Every number, timecode and uppercase legend renders in mono — this is
+   what stops a counting timecode from shifting width, and it replaces the
+   font-variant-numeric: tabular-nums patches the old UI carried. */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}
+
+/* "It labels a region; it is never a sentence." */
+.legend {
+  font-family: var(--font-mono);
+  font-size: var(--text-3xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-legend);
+  text-transform: uppercase;
+  color: var(--text-meta);
+  white-space: nowrap;
+}
+
+.legend--sm {
+  font-size: var(--text-4xs);
+  letter-spacing: 0.16em;
+}
+
+/* Browser defaults are nearly invisible on these surfaces. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-6);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.btn:disabled {
+  background: var(--surface-track);
+  border-color: transparent;
+  color: var(--text-disabled);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* A disabled ghost keeps its shape: filling it would promote it to a
+   secondary face, so an unavailable ghost ends up louder on screen than the
+   live controls beside it (the dock's "Reset 1.00×" at tempo 1). */
+.btn--ghost:disabled {
+  background: transparent;
+  border-color: var(--border-subtle);
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  box-shadow: var(--shadow-accent);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+/* The inset top highlight is what makes this read as a physical, pressable
+   face rather than a bordered div. */
+.btn--secondary {
+  background: var(--surface-control);
+  border: 1px solid var(--border-raised);
+  color: var(--text-primary);
+  box-shadow: inset 0 1px 0 var(--highlight-inset);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  background: var(--surface-control-hover);
+}
+
+.btn--ghost {
+  background: transparent;
+  border: 1px solid var(--border-control);
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--surface-card);
+  color: var(--text-primary);
+}
+
+/* An engaged toggle changes *fill*, never border colour alone — plus the
+   3px ring. Every engaged control also carries a word. */
+.btn.is-engaged {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.btn.is-engaged:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn.is-engaged--loop {
+  background: var(--loop);
+  border-color: var(--loop);
+  color: var(--on-loop);
+  box-shadow: 0 0 0 3px var(--loop-ring);
+}
+
+.btn.is-engaged--loop:hover:not(:disabled) {
+  background: var(--loop);
+}
+
+/* Sizes, from the hit-target table. */
+.btn--primary-tap { min-height: var(--tap-primary); border-radius: var(--radius-control); font-size: var(--text-lg); }
+.btn--toggle-tap  { min-height: var(--tap-toggle);  border-radius: var(--radius-control); }
+.btn--default-tap { min-height: var(--tap-default); }
+.btn--dense       { min-height: var(--tap-dense); padding: 0 var(--space-5); font-size: var(--text-xs); border-radius: var(--radius-xs); }
+.btn--icon        { padding: 0; width: var(--tap-dense); min-height: var(--tap-dense); border-radius: var(--radius-xs); }
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--danger-wash);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+/* ── Chips and badges ────────────────────────────────────────────────── */
+
+/* The offline chip: the identity of the product, not a footnote. */
+.offline-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 32px;
+  padding: 0 var(--space-4);
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: var(--text-3xs);
+  letter-spacing: var(--tracking-badge);
+  color: var(--text-body);
+  white-space: nowrap;
+}
+
+.offline-chip .icon {
+  font-size: 16px;
+  color: var(--accent);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px var(--space-2);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-chip);
+  font-family: var(--font-mono);
+  font-size: var(--text-3xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-badge);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.badge--loop   { color: var(--loop); }
+.badge--accent { color: var(--accent); }
+.badge--danger { color: var(--danger); }
+
+/* ── Sliders ─────────────────────────────────────────────────────────── */
+
+/* A range input restyled to the design's track + thumb. The lime fill is a
+   linear-gradient driven by a --fill custom property the component sets
+   from the value, since a native range gives no way to colour the left of
+   the thumb only. */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: var(--slider-track, 6px);
+  background: linear-gradient(
+    to right,
+    var(--accent) 0 var(--fill, 0%),
+    var(--surface-track) var(--fill, 0%) 100%
+  );
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--slider-thumb, 20px);
+  height: var(--slider-thumb, 20px);
+  border: none;
+  border-radius: var(--slider-thumb-radius, 999px);
+  background: var(--text-primary);
+  box-shadow: var(--shadow-knob);
+  cursor: pointer;
+}
+
+.slider::-moz-range-thumb {
+  width: var(--slider-thumb, 20px);
+  height: var(--slider-thumb, 20px);
+  border: none;
+  border-radius: var(--slider-thumb-radius, 999px);
+  background: var(--text-primary);
+  box-shadow: var(--shadow-knob);
+  cursor: pointer;
+}
+
+/* The tempo slider reads as a different instrument from the round gain
+   thumbs: bigger track, rounded-square thumb. */
+.slider--tempo {
+  --slider-track: 8px;
+  --slider-thumb: 26px;
+  --slider-thumb-radius: 7px;
+}
+
+/* ── Switch ──────────────────────────────────────────────────────────── */
+
+.switch {
+  position: relative;
+  flex: none;
+  width: var(--switch-w, 52px);
+  height: var(--switch-h, 30px);
+  padding: 0;
+  border: 1px solid var(--border-control);
+  border-radius: 999px;
+  background: var(--surface-track);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: calc(var(--switch-h, 30px) - 10px);
+  height: calc(var(--switch-h, 30px) - 10px);
+  border-radius: 999px;
+  background: var(--text-secondary);
+  transform: translateY(-50%);
+  transition: left 120ms ease, background-color 120ms ease;
+}
+
+.switch[aria-checked='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch[aria-checked='true']::after {
+  left: calc(var(--switch-w, 52px) - var(--switch-h, 30px) + 3px);
+  background: var(--on-accent);
+}
+
+/* ── Segmented control ───────────────────────────────────────────────── */
+
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-track);
+  border-radius: var(--radius-sm);
+}
+
+.segmented button {
+  min-height: 36px;
+  padding: 0 var(--space-7);
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-badge);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.segmented button[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+/* ── Numeric well ────────────────────────────────────────────────────── */
+
+.field-well {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 48px;
+  padding: 0 var(--space-2) 0 var(--space-4);
+  background: var(--surface-inset);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-sm);
+}
+
+.field-well input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.field-well input:focus {
+  outline: none;
+}
+
+.field-well input::-webkit-outer-spin-button,
+.field-well input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.field-well input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* The stacked ± pair beside a numeric well. */
+.stepper {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  flex: none;
+}
+
+.stepper button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 19px;
+  padding: 0;
+  border: 1px solid var(--border-raised);
+  border-radius: var(--radius-chip);
+  background: var(--surface-control);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.stepper button:hover {
+  background: var(--surface-control-hover);
+}
+
+.stepper .icon {
+  font-size: 15px;
+}
+
+/* ── Progress ────────────────────────────────────────────────────────── */
+
+.progress {
+  width: 100%;
+  height: var(--progress-h, 10px);
+  background: var(--surface-track);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 120ms ease;
+}
+
+.progress--indeterminate > span {
+  width: 35%;
+  animation: progress-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(340%); }
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────── */
+
+/* "A tool you look at for an hour should be still."
+ *
+ * Deliberately not the usual blanket `animation-duration: 0.001ms
+ * !important`: the spec asks for two specific things under reduced motion —
+ * "drop the slide-ins to opacity fades and stop the pulse" — and a blanket
+ * override would kill the fade too, which is the accommodation, not the
+ * thing being accommodated. So: hover transitions collapse, the one looping
+ * animation stops, and the entry animations are swapped for fades in
+ * index.css. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.001ms !important;
+  }
+
+  .job-dot,
+  .progress--indeterminate > span {
+    animation: none;
+  }
+}

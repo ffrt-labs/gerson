@@ -1,50 +1,51 @@
 import { describe, it, expect, vi } from 'vitest';
 import { drawLoopLane } from '../lane.ts';
+import { LOOP_REGION_FILL, LOOP_REGION_FILL_OFF } from '../colors.ts';
 import type { Canvas2DLike } from '../canvas.ts';
 
-// fillStyle is a plain property on the real CanvasRenderingContext2D, but
-// drawLoopLane sets it twice (fill color, then handle color) — a setter
-// here records both assignments in call order, so a test can tell which
-// fillRect used which color rather than only seeing the final value.
+// A setter on fillStyle records each assignment in call order, so a test
+// can tell which fillRect used which colour rather than only seeing the
+// final value.
 function fakeCtx(): Canvas2DLike & { calls: string[] } {
   const calls: string[] = [];
-  let fillStyleValue = '';
+  let fillStyleValue: Canvas2DLike['fillStyle'] = '';
   return {
     calls,
     get fillStyle() {
       return fillStyleValue;
     },
-    set fillStyle(value: string) {
+    set fillStyle(value: Canvas2DLike['fillStyle']) {
       fillStyleValue = value;
-      calls.push(`fillStyle:${value}`);
+      calls.push(`fillStyle:${String(value)}`);
     },
     clearRect: vi.fn((x, y, w, h) => calls.push(`clearRect:${x},${y},${w},${h}`)),
     beginPath: vi.fn(() => calls.push('beginPath')),
+    closePath: vi.fn(() => calls.push('closePath')),
     moveTo: vi.fn((x, y) => calls.push(`moveTo:${x},${y}`)),
     lineTo: vi.fn((x, y) => calls.push(`lineTo:${x},${y}`)),
     stroke: vi.fn(() => calls.push('stroke')),
+    fill: vi.fn(() => calls.push('fill')),
     fillRect: vi.fn((x, y, w, h) => calls.push(`fillRect:${x},${y},${w},${h}`)),
   };
 }
 
 describe('drawLoopLane', () => {
-  it('always clears first, then draws the fill and both edge handles', () => {
+  // The canvas draws the region fill and nothing else — the A and B handles
+  // are DOM elements over it, because each carries its own letter.
+  it('clears first, then draws the region fill alone', () => {
     const ctx = fakeCtx();
-    drawLoopLane(ctx, { startXPx: 100, endXPx: 300 }, 1200, 20, true);
+    drawLoopLane(ctx, { startXPx: 100, endXPx: 300 }, 1200, 30, true);
     expect(ctx.calls).toEqual([
-      'clearRect:0,0,1200,20',
-      'fillStyle:rgba(217, 164, 65, 0.45)',
-      'fillRect:100,0,200,20',
-      'fillStyle:#d9a441',
-      'fillRect:99,0,2,20',
-      'fillRect:299,0,2,20',
+      'clearRect:0,0,1200,30',
+      `fillStyle:${LOOP_REGION_FILL}`,
+      'fillRect:100,0,200,30',
     ]);
   });
 
   it('draws only the clear when there is no region', () => {
     const ctx = fakeCtx();
-    drawLoopLane(ctx, null, 1200, 20, true);
-    expect(ctx.calls).toEqual(['clearRect:0,0,1200,20']);
+    drawLoopLane(ctx, null, 1200, 30, true);
+    expect(ctx.calls).toEqual(['clearRect:0,0,1200,30']);
   });
 
   it('draws only the clear when the lane has no height', () => {
@@ -53,45 +54,36 @@ describe('drawLoopLane', () => {
     expect(ctx.calls).toEqual(['clearRect:0,0,1200,0']);
   });
 
-  it('clips the fill and drops the off-screen handle when the region runs off the left edge', () => {
+  it('clips the fill when the region runs off the left edge', () => {
     const ctx = fakeCtx();
-    drawLoopLane(ctx, { startXPx: -50, endXPx: 100 }, 1200, 20, true);
+    drawLoopLane(ctx, { startXPx: -50, endXPx: 100 }, 1200, 30, true);
     expect(ctx.calls).toEqual([
-      'clearRect:0,0,1200,20',
-      'fillStyle:rgba(217, 164, 65, 0.45)',
-      'fillRect:0,0,100,20',
-      'fillStyle:#d9a441',
-      'fillRect:99,0,2,20', // only the visible (end) handle
+      'clearRect:0,0,1200,30',
+      `fillStyle:${LOOP_REGION_FILL}`,
+      'fillRect:0,0,100,30',
     ]);
   });
 
-  it('clips the fill and drops the off-screen handle when the region runs off the right edge', () => {
+  it('clips the fill when the region runs off the right edge', () => {
     const ctx = fakeCtx();
-    drawLoopLane(ctx, { startXPx: 1100, endXPx: 1400 }, 1200, 20, true);
+    drawLoopLane(ctx, { startXPx: 1100, endXPx: 1400 }, 1200, 30, true);
     expect(ctx.calls).toEqual([
-      'clearRect:0,0,1200,20',
-      'fillStyle:rgba(217, 164, 65, 0.45)',
-      'fillRect:1100,0,100,20',
-      'fillStyle:#d9a441',
-      'fillRect:1099,0,2,20', // only the visible (start) handle
+      'clearRect:0,0,1200,30',
+      `fillStyle:${LOOP_REGION_FILL}`,
+      'fillRect:1100,0,100,30',
     ]);
   });
 
-  it('draws no fill or handles when the region is entirely outside the canvas', () => {
+  it('draws no fill when the region is entirely outside the canvas', () => {
     const ctx = fakeCtx();
-    drawLoopLane(ctx, { startXPx: -200, endXPx: -50 }, 1200, 20, true);
-    expect(ctx.calls).toEqual(['clearRect:0,0,1200,20']);
+    drawLoopLane(ctx, { startXPx: -200, endXPx: -50 }, 1200, 30, true);
+    expect(ctx.calls).toEqual(['clearRect:0,0,1200,30']);
   });
 
-  it('uses a dimmer fill color for the region when the loop is disabled (the handle color stays the same)', () => {
-    const enabledCtx = fakeCtx();
-    drawLoopLane(enabledCtx, { startXPx: 100, endXPx: 300 }, 1200, 20, true);
-
-    const disabledCtx = fakeCtx();
-    drawLoopLane(disabledCtx, { startXPx: 100, endXPx: 300 }, 1200, 20, false);
-
-    const enabledFillColor = enabledCtx.calls[1];
-    const disabledFillColor = disabledCtx.calls[1];
-    expect(disabledFillColor).not.toBe(enabledFillColor);
+  it('uses a dimmer fill when the loop is set but not repeating', () => {
+    const ctx = fakeCtx();
+    drawLoopLane(ctx, { startXPx: 100, endXPx: 300 }, 1200, 30, false);
+    expect(ctx.calls).toContain(`fillStyle:${LOOP_REGION_FILL_OFF}`);
+    expect(ctx.calls).not.toContain(`fillStyle:${LOOP_REGION_FILL}`);
   });
 });
