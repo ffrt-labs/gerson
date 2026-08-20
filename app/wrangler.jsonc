@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "gerson",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-08-20",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // react-router owns the routes: any path that isn't a real file must be
+    // served index.html rather than a 404, or a deep link / reload 404s.
+    "not_found_handling": "single-page-application",
+    // Without this, the SPA fallback above would answer /model/* with
+    // index.html and the Worker would never see the request. Scoped to that
+    // one prefix on purpose — every other path is served straight from the
+    // asset router, which doesn't bill a Worker invocation.
+    "run_worker_first": ["/model/*"]
+  },
+  "r2_buckets": [
+    {
+      "binding": "MODEL_BUCKET",
+      "bucket_name": "gerson-model"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}
