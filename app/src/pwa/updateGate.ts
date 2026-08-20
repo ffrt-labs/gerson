@@ -5,7 +5,7 @@
  *
  * This asks a different question from queue.ts's isActive, and needs its own
  * predicate to ask it. `isActive` counts interrupted Separations — correct
- * for JobStatusBar.tsx, which asks "what should the user see?" and should
+ * for the Library footer, which asks "what should the user see?" and should
  * keep listing them. The gate asks "would reloading destroy work?", and an
  * interrupted Separation has no worker and holds no progress (its row is
  * written back at progress: 0), so reloading costs it exactly nothing.

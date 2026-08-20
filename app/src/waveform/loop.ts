@@ -17,6 +17,12 @@ import type { LoopRegion } from '../domain/types.ts';
 // anchor.ts — so every mutator here refuses to produce one.
 export const MIN_LOOP_LENGTH_SEC = 0.05;
 
+// The finest deliberate adjustment to a loop edge: one arrow-key press, one
+// stepper press in the precision drawer. Fine enough to place an edge
+// precisely by ear without a beat grid (Gerson has no notion of beats);
+// coarser than this would stop being a nudge and start being a typo.
+export const LOOP_STEP_SEC = 0.01;
+
 export type LoopDragMode = 'create' | 'resize-start' | 'resize-end' | 'move';
 
 // Which gesture a mousedown in the lane starts, given where it landed

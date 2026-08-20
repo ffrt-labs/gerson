@@ -24,8 +24,8 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        background_color: '#111111',
-        theme_color: '#863bff',
+        background_color: '#080a0e',
+        theme_color: '#080a0e',
         icons: [
           { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
@@ -37,8 +37,11 @@ export default defineConfig({
         // An explicit allowlist rather than the default glob, so a stray
         // large file landing under public/ (dev fixtures, the model weights
         // once #35 lands) can't silently balloon the precache — it has to be
-        // added here on purpose.
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,wasm,webmanifest}'],
+        // added here on purpose. woff2 is on the list because the design's
+        // two families are self-hosted (see src/fonts.css): a webfont that
+        // only arrives online would break the offline promise on every
+        // screen that renders a number.
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,wasm,webmanifest,woff2}'],
         // dev-stems/** are local-only fixtures for the dev-only playback
         // harness (never referenced in a production build); model/** is
         // where #35 serves the pinned weights from — kept out of the

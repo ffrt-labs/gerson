@@ -1,460 +1,275 @@
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/*
+ * Screen styles. The design system itself — tokens, fonts, and the shared
+ * control primitives — lives in the three files imported below; this file
+ * is the layout of the two routes and the surfaces that sit over them.
+ *
+ * Naming follows the existing convention: a block per region
+ * (`stage-*`, `stem-card-*`, `dock-*`, `song-row-*`), a `--modifier` for a
+ * variant, `is-*` for a state. Sibling groups are laid out with flex/grid
+ * and `gap` — never margins between siblings.
+ */
 
-html, body, #root {
-  height: 100%;
-}
+@import './tokens.css';
+@import './fonts.css';
+@import './base.css';
 
-body {
-  font-family: system-ui, sans-serif;
-  background: #111;
-  color: #eee;
-}
+/* ── App frame ───────────────────────────────────────────────────────── */
 
-a {
-  color: inherit;
-}
-
-.surface {
+.app-frame {
   display: flex;
   flex-direction: column;
   height: 100%;
+  background: var(--surface-app);
 }
 
-.surface-header {
+.app-header {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid #333;
+  gap: var(--space-6);
+  flex: none;
+  height: 64px;
+  padding: 0 var(--space-9);
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-.surface-header h1 {
-  font-size: 1.1rem;
-  font-weight: 600;
+.app-header-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
-.back-link {
-  text-decoration: none;
-  font-size: 0.9rem;
-  opacity: 0.7;
+.app-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-left: auto;
 }
 
-.surface-main {
+.app-main {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 1rem;
+  padding: var(--space-9);
+}
+
+.app-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: none;
+  height: 48px;
+  padding: 0 var(--space-9);
+  background: var(--surface-well);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.app-footer-check {
+  font-size: 17px;
+  color: var(--text-meta);
+}
+
+.app-footer-note {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.app-footer--active .legend {
+  color: var(--accent);
+}
+
+/* The logo mark is CSS and one glyph, not an image. */
+.logo-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.logo-mark .icon {
+  font-size: 18px;
+}
+
+.logo-word {
+  font-size: var(--text-h3);
+  font-weight: 700;
+  letter-spacing: var(--tracking-title);
 }
 
 .empty-state {
-  opacity: 0.5;
-  font-size: 0.9rem;
+  padding: var(--space-12) 0;
+  color: var(--text-tertiary);
+  text-align: center;
 }
 
-.dev-nav-link {
-  display: block;
-  margin-top: 1rem;
-  font-size: 0.8rem;
-  opacity: 0.4;
-  text-decoration: none;
-}
+/* ── Alert notes ─────────────────────────────────────────────────────── */
 
-.job-status-bar {
-  border-top: 1px solid #333;
-  padding: 0.5rem 1rem;
-}
-
-.job-status-toggle {
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.8rem;
-  opacity: 0.5;
-  padding: 0;
-}
-
-.job-status-panel {
-  padding-top: 0.5rem;
-  font-size: 0.85rem;
-  opacity: 0.6;
-}
-
-.job-status-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.job-status-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.job-status-item-main {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.job-status-badge {
-  font-size: 0.75rem;
-  opacity: 0.7;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.job-status-notice {
-  font-size: 0.75rem;
-  opacity: 0.6;
-}
-
-.job-status-cancel {
-  background: none;
-  border: 1px solid #444;
-  border-radius: 3px;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.72rem;
-  padding: 0.1rem 0.4rem;
-  margin-left: auto;
-}
-
-/* ─── Library ──────────────────────────────────────────────────────────────── */
-
-.pick-file-btn {
-  margin-left: auto;
-  background: #222;
-  border: 1px solid #444;
-  border-radius: 4px;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.85rem;
-  padding: 0.3rem 0.75rem;
-}
-
-.pick-file-btn:hover:not(:disabled) {
-  background: #2a2a2a;
-}
-
-.pick-file-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.library-notice {
-  margin-bottom: 1rem;
-  padding: 0.6rem 0.75rem;
-  background: #1a1a1a;
-  border-left: 3px solid #555;
-  border-radius: 2px;
-  font-size: 0.85rem;
-  line-height: 1.4;
-}
-
-.update-banner {
+.alert-note {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  border-left-color: #d9a441;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  font-size: var(--text-sm);
+  color: var(--text-body);
 }
 
-.update-banner button {
-  flex-shrink: 0;
-  background: none;
-  border: 1px solid #444;
-  border-radius: 4px;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.78rem;
-  padding: 0.2rem 0.6rem;
-}
+.alert-note .icon { font-size: 20px; }
+.alert-note--loop   { border-color: var(--loop-border); }
+.alert-note--loop .icon   { color: var(--loop); }
+.alert-note--danger { border-color: var(--danger-border); color: var(--danger); }
+.alert-note--accent { border-color: var(--accent-border); }
+.alert-note--accent .icon { color: var(--accent); }
+.alert-note > .btn { margin-left: auto; }
 
-.update-banner button:hover {
-  background: #2a2a2a;
-}
+/* ── Player ──────────────────────────────────────────────────────────── */
 
-.library-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.library-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.6rem 0.75rem;
-  border-radius: 4px;
-  background: #1a1a1a;
-}
-
-.library-item--separation {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.35rem;
-  opacity: 0.75;
-}
-
-.library-item-main {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.library-item-detail {
-  font-size: 0.8rem;
-  opacity: 0.7;
-  line-height: 1.4;
-}
-
-.library-item-controls {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.library-item-controls button {
-  background: none;
-  border: 1px solid #444;
-  border-radius: 4px;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.78rem;
-  padding: 0.2rem 0.6rem;
-}
-
-.library-item-controls button:hover:not(:disabled) {
-  background: #2a2a2a;
-}
-
-.library-item-controls button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.library-item-badge--interrupted {
-  color: #d9a441;
-}
-
-.library-item-link {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  text-decoration: none;
-  gap: 0.75rem;
-}
-
-.library-item-title-input {
-  flex: 1;
-  min-width: 0;
-  background: #111;
-  border: 1px solid #555;
-  border-radius: 3px;
-  color: inherit;
-  font-size: 0.9rem;
-  padding: 0.2rem 0.4rem;
-}
-
-.library-item-link:hover .library-item-title {
-  text-decoration: underline;
-}
-
-.library-item-title {
-  flex: 1;
-  font-size: 0.9rem;
+.player-title {
+  font-size: var(--text-h2);
+  font-weight: 600;
+  letter-spacing: var(--tracking-title);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.library-item-meta {
-  font-size: 0.78rem;
-  opacity: 0.5;
-  flex-shrink: 0;
+.player-meta {
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
 }
 
-.library-item-badge {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  opacity: 0.5;
+.player-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+}
+
+/* ── Waveform stage ──────────────────────────────────────────────────── */
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.stage-caption {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.stage-caption-values {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-2xs);
+  color: var(--loop);
+}
+
+.stage-caption-arrow {
+  font-size: 14px;
+}
+
+.stage-caption-empty {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.stage-view-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   margin-left: auto;
 }
 
-/* ─── Player ───────────────────────────────────────────────────────────────── */
+.stage-follow {
+  min-height: 34px;
+}
 
-.player-transport {
+/* Two buttons joined into one cluster: a shared border, one seam. */
+.stage-zoom {
+  display: flex;
+  border: 1px solid var(--border-raised);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+}
+
+.stage-zoom button {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-}
-
-.player-transport button {
-  background: #222;
-  border: 1px solid #444;
-  border-radius: 4px;
-  color: inherit;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: var(--surface-control);
+  color: var(--text-primary);
   cursor: pointer;
-  font-size: 0.85rem;
-  padding: 0.3rem 0.75rem;
+  transition: background-color 120ms ease;
 }
 
-.player-transport button:hover:not(:disabled) {
-  background: #2a2a2a;
+.stage-zoom button:first-child {
+  border-right: 1px solid var(--border-raised);
 }
 
-.player-transport button:disabled {
-  opacity: 0.5;
-  cursor: default;
+.stage-zoom button:hover {
+  background: var(--surface-control-hover);
 }
 
-.player-transport input {
-  background: #111;
-  border: 1px solid #555;
-  border-radius: 3px;
-  color: inherit;
-  font-size: 0.85rem;
-  padding: 0.2rem 0.4rem;
-  width: 5rem;
-}
-
-.player-playhead {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-  font-size: 0.85rem;
-  opacity: 0.7;
-}
-
-.player-tempo {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-top: 0.75rem;
-}
-
-.player-tempo button {
-  background: #222;
-  border: 1px solid #444;
-  border-radius: 4px;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.85rem;
-  padding: 0.3rem 0.75rem;
-}
-
-.player-tempo button:hover:not(:disabled) {
-  background: #2a2a2a;
-}
-
-.player-tempo button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.player-memory {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  margin-top: 0.75rem;
-}
-
-.player-memory-mono {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-}
-
-.player-memory-warning {
-  font-size: 0.8rem;
-  color: #e0a030;
-  margin: 0;
-}
-
-.player-tempo-readout {
-  font-variant-numeric: tabular-nums;
-  font-size: 0.85rem;
-  min-width: 3.5rem;
-}
-
-.waveform-controls {
-  display: flex;
-  flex-direction: column;
-  margin-top: 0.75rem;
-}
-
-.waveform-follow {
-  align-self: flex-start;
-  background: #222;
-  border: 1px solid #444;
-  border-radius: 4px;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.85rem;
-  margin-bottom: 0.4rem;
-  padding: 0.3rem 0.75rem;
-}
-
-.waveform-follow:hover {
-  background: #2a2a2a;
-}
-
-.waveform-follow--active {
-  background: #d9a441;
-  border-color: #d9a441;
-  color: #111;
+.stage-well {
+  background: var(--surface-well);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-well);
+  overflow: hidden;
 }
 
 .loop-lane {
   position: relative;
-  border-radius: 4px;
-  overflow: hidden;
-  background: #161616;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border-subtle);
   cursor: crosshair;
-  user-select: none;
-  touch-action: none;
-  margin-bottom: 2px;
 }
 
 .loop-lane-canvas {
   display: block;
-  width: 100%;
 }
 
-.waveform-stack {
-  position: relative;
+/* The letter is a child of the handle, flex-centred — a separately
+   positioned letter drifts off the amber as the region moves. */
+.loop-lane-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
   display: flex;
-  flex-direction: column;
-  border-radius: 4px;
-  overflow: hidden;
-  background: #111;
-  cursor: grab;
+  align-items: center;
+  justify-content: center;
+  background: var(--loop);
+  color: var(--on-loop);
+  font-size: var(--text-3xs);
+  font-weight: 700;
+  cursor: ew-resize;
   user-select: none;
-  touch-action: none;
 }
 
-.waveform-stack:active {
+.stage-waveform {
+  position: relative;
+  cursor: grab;
+}
+
+.stage-waveform:active {
   cursor: grabbing;
 }
 
-.waveform-row {
+.stage-waveform canvas {
   display: block;
-  width: 100%;
-  color: #6a8caf;
-  border-bottom: 1px solid #1a1a1a;
-}
-
-.waveform-row:last-child {
-  border-bottom: none;
 }
 
 .waveform-overlay {
@@ -463,331 +278,1550 @@ a {
   pointer-events: none;
 }
 
-.player-loop {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
+.stage-ruler {
+  position: relative;
+  background: var(--surface-inset);
+  border-top: 1px solid var(--border-subtle);
 }
 
-.player-loop-toggle {
-  background: #222;
-  border: 1px solid #444;
-  border-radius: 4px;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.85rem;
-  padding: 0.3rem 0.75rem;
+.stage-ruler-tick {
+  position: absolute;
+  top: 50%;
+  transform: translate(4px, -50%);
+  font-size: var(--text-4xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
-.player-loop-toggle:hover {
-  background: #2a2a2a;
+.stage-ruler-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--accent);
 }
 
-.player-loop-toggle--active {
-  background: #d9a441;
-  border-color: #d9a441;
-  color: #111;
+/* ── Stem cards ──────────────────────────────────────────────────────── */
+
+.stem-grid-legend {
+  margin-top: var(--space-1);
 }
 
-.player-loop-field {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.85rem;
+.stem-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-6);
 }
 
-.player-loop-field input {
-  background: #111;
-  border: 1px solid #555;
-  border-radius: 3px;
-  color: inherit;
-  font-size: 0.85rem;
-  padding: 0.2rem 0.4rem;
-  width: 5rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.player-loop-field input:disabled {
-  opacity: 0.4;
-}
-
-.player-loop-action {
-  background: #222;
-  border: 1px solid #444;
-  border-radius: 4px;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.85rem;
-  padding: 0.3rem 0.75rem;
-}
-
-.player-loop-action:hover {
-  background: #2a2a2a;
-}
-
-.player-stems {
+.stem-card {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 1rem;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  background: var(--surface-card);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-card);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
-.player-stem-row {
+/* A soloed card is outlined; a muted one dims only its identity, never its
+   controls — the card itself must not drop opacity. */
+.stem-card--solo {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 1px var(--accent-border);
+}
+
+.stem-card--muted .stem-card-icon,
+.stem-card--muted .stem-card-name {
+  color: var(--text-tertiary);
+}
+
+.stem-card-header {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
-  background: #1a1a1a;
-  border-radius: 4px;
+  gap: var(--space-3);
 }
 
-.player-stem-role {
-  width: 4rem;
-  font-size: 0.85rem;
+.stem-card-icon {
+  font-size: 22px;
+  color: var(--text-secondary);
 }
 
-.player-stem-gain-readout {
-  font-variant-numeric: tabular-nums;
-  font-size: 0.85rem;
-  min-width: 2.5rem;
+.stem-card-name {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-title);
 }
 
-.player-stem-toggle {
-  background: #222;
-  border: 1px solid #444;
-  border-radius: 4px;
-  color: inherit;
+.stem-card-index {
+  margin-left: auto;
+  font-size: var(--text-4xs);
+  color: var(--text-meta);
+}
+
+.stem-card-wave {
+  width: 100%;
+}
+
+.stem-card-wave canvas {
+  display: block;
+}
+
+.stem-card-gain {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.stem-card-gain-value {
+  flex: none;
+  width: 34px;
+  font-size: var(--text-xs);
+  text-align: right;
+  color: var(--text-secondary);
+}
+
+.stem-card-toggles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.stem-card-toggles .btn {
+  padding: 0 var(--space-3);
+  font-size: var(--text-xs);
+}
+
+/* ── Transport dock ──────────────────────────────────────────────────── */
+
+.dock {
+  display: flex;
+  align-items: center;
+  gap: var(--space-7);
+  flex: none;
+  height: 104px;
+  padding: 0 var(--space-9);
+  background: var(--surface-raised);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.dock-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-7);
+}
+
+.dock-group--tempo {
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.dock-divider {
+  flex: none;
+  width: 1px;
+  height: 60px;
+  background: var(--border-subtle);
+}
+
+/* Design 2d only: on desktop the waveform is right there to click and
+   Space is advertised under the play button. */
+.dock-skip {
+  display: none;
+  width: 56px;
+  min-height: 56px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.dock-skip .icon {
+  font-size: 26px;
+}
+
+.dock-play {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.dock-play-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-play-desktop);
+  height: var(--tap-play-desktop);
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: var(--shadow-play);
   cursor: pointer;
-  font-size: 0.85rem;
-  padding: 0.3rem 0.75rem;
+  transition: background-color 120ms ease;
 }
 
-.player-stem-toggle:hover {
-  background: #2a2a2a;
+.dock-play-button:hover {
+  background: var(--accent-hover);
 }
 
-.player-stem-toggle--active {
-  background: #d9a441;
-  border-color: #d9a441;
-  color: #111;
+.dock-play-button .icon {
+  font-size: 32px;
 }
 
-.player-export {
+.dock-play-hint {
+  font-size: 9px;
+  letter-spacing: var(--tracking-badge);
+  text-transform: uppercase;
+  color: var(--text-meta);
+}
+
+.dock-timecode {
+  display: flex;
+  flex-direction: column;
+}
+
+.dock-timecode-now {
+  font-size: var(--text-title);
+  font-weight: 500;
+}
+
+.dock-timecode-total {
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+}
+
+.dock-tempo-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.dock-tempo-legend > .icon {
+  font-size: 18px;
+  color: var(--text-meta);
+}
+
+.dock-tempo-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.dock-tempo-note {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.dock-tempo-reset {
+  margin-left: auto;
+}
+
+.dock-tempo-control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.dock-tempo-slider {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* The 1.00× detent: the one tempo worth finding by feel. */
+.dock-tempo-detent {
+  position: absolute;
+  top: 50%;
+  width: 1px;
+  height: 18px;
+  margin-left: -0.5px;
+  transform: translateY(-50%);
+  background: var(--border-raised);
+  pointer-events: none;
+}
+
+.dock-tempo-end {
+  flex: none;
+  font-size: var(--text-4xs);
+  color: var(--text-meta);
+}
+
+.dock-group--loop {
+  gap: var(--space-4);
+}
+
+.dock-loop {
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 82px;
+  min-height: 62px;
+  padding: 0;
+  font-size: var(--text-xs);
+}
+
+.dock-loop .icon {
+  font-size: 22px;
+}
+
+.dock-loop-actions {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: var(--space-2);
+}
+
+.dock-loop-actions .btn {
+  min-height: 28px;
+  padding: 0 var(--space-4);
+}
+
+.dock-precision {
+  grid-column: 1 / -1;
+}
+
+/* ── Precision drawer ────────────────────────────────────────────────── */
+
+.precision {
+  flex: none;
+  background: var(--surface-raised);
+  border-top: 1px solid var(--border-raised);
+  box-shadow: var(--shadow-dock);
+  animation: drawer-up 180ms ease-out;
+}
+
+@keyframes drawer-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+/* Under reduced motion the slide-ins become opacity fades — the surface
+   still announces itself as new, it just doesn't travel. */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .precision,
+  .sheet {
+    animation: fade-in 180ms ease-out;
+  }
+}
+
+.precision-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 52px;
+  padding: 0 var(--space-9);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.precision-header .icon {
+  font-size: 18px;
+  color: var(--text-meta);
+}
+
+.precision-hide {
+  margin-left: auto;
+}
+
+.precision-groups {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-7);
+  padding: var(--space-7) var(--space-9);
+  overflow-x: auto;
+}
+
+.precision-group {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.5rem;
-  margin-top: 1.25rem;
-  padding-top: 1rem;
-  border-top: 1px solid #2a2a2a;
+  gap: var(--space-4);
 }
 
-.player-export-label {
-  font-size: 0.85rem;
-  color: #999;
+.precision-divider {
+  flex: none;
+  width: 1px;
+  background: var(--border-subtle);
 }
 
-.player-export-format {
+.precision-fields {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-5);
 }
 
-.player-export-format-option {
+.precision-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 140px;
+}
+
+.precision-label--loop {
+  color: var(--loop);
+}
+
+.precision-hint,
+.precision-copy {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.precision-copy {
+  max-width: 210px;
+}
+
+.precision-nudges {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.precision-nudge {
+  flex-direction: column;
+  gap: 2px;
+  width: 62px;
+  min-height: 48px;
+  padding: 0;
+  font-size: var(--text-2xs);
+}
+
+.precision-jump {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.85rem;
+  gap: var(--space-3);
 }
 
-.player-export-caveat {
-  font-size: 0.8rem;
-  color: #999;
-  margin: 0;
+.precision-jump .field-well {
+  width: 104px;
 }
 
-.player-export-apply-tempo {
+.precision-mono {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
+  gap: var(--space-4);
 }
 
-.player-export-button {
-  background: #222;
-  border: 1px solid #444;
-  border-radius: 4px;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.85rem;
-  padding: 0.3rem 0.75rem;
+.precision-mono-label {
+  font-size: var(--text-sm);
+  font-weight: 500;
 }
 
-.player-export-button:hover:not(:disabled) {
-  background: #2a2a2a;
+/* The one legend allowed to wrap: it is a key list, and at four groups
+   across it is what would otherwise push the drawer past the window. */
+.precision-shortcuts {
+  margin-top: auto;
+  max-width: 210px;
+  white-space: normal;
+  line-height: 1.9;
 }
 
-.player-export-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
+/* ── Export sheet ────────────────────────────────────────────────────── */
 
-.player-export-error {
-  font-size: 0.8rem;
-  color: #e0605a;
-  margin: 0;
-}
-
-/* ─── Drop zone ────────────────────────────────────────────────────────────── */
-
-.surface--drop-active {
-  outline: 2px dashed #555;
-  outline-offset: -4px;
-}
-
-.drop-overlay {
+.sheet-scrim {
   position: fixed;
   inset: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.65);
-  font-size: 1.2rem;
-  letter-spacing: 0.03em;
-  pointer-events: none;
-  z-index: 10;
-}
-
-/* ─── Modal ────────────────────────────────────────────────────────────────── */
-
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.7);
+  justify-content: flex-end;
+  background: oklch(0.145 0.008 260 / 0.72);
   z-index: 20;
-  padding: 1rem;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  background: var(--surface-app);
+  border-left: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-drawer);
+  animation: sheet-in 180ms ease-out;
+}
+
+@keyframes sheet-in {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: none;
+  height: 64px;
+  padding: 0 var(--space-9);
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sheet-header > .icon {
+  font-size: 22px;
+  color: var(--accent);
+}
+
+.sheet-header-text {
+  min-width: 0;
+}
+
+.sheet-title {
+  font-size: var(--text-h2);
+  font-weight: 600;
+  letter-spacing: var(--tracking-title);
+}
+
+.sheet-subtitle {
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sheet-header .btn--icon {
+  margin-left: auto;
+}
+
+.sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-9);
+}
+
+.sheet-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: none;
+  padding: var(--space-6) var(--space-9);
+  border-top: 1px solid var(--loop-border);
+  background: var(--surface-well);
+  font-size: var(--text-xs);
+  color: var(--text-body);
+}
+
+.sheet-footer .icon {
+  font-size: 20px;
+  color: var(--loop);
+}
+
+.export-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-9);
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+}
+
+/* Lime-tinted, because this is the one that bakes in what you hear. */
+.export-card--mix {
+  border-color: var(--accent-border);
+}
+
+.export-card-title {
+  font-size: var(--text-h3);
+  font-weight: 600;
+  letter-spacing: var(--tracking-title);
+}
+
+.export-card-copy {
+  font-size: var(--text-sm);
+  color: var(--text-body);
+}
+
+.export-card-note {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.export-card-estimate {
+  font-size: var(--text-2xs);
+  color: var(--text-meta);
+}
+
+.export-card-action {
+  width: 100%;
+}
+
+.export-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.export-tempo {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-5);
+  background: var(--surface-inset);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-sm);
+}
+
+.export-tempo-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.export-tempo-label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.export-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+/* ── Modals ──────────────────────────────────────────────────────────── */
+
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-9);
+  background: oklch(0.145 0.008 260 / 0.72);
+  z-index: 30;
 }
 
 .modal {
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 1.25rem;
-  max-width: 32rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-5);
   width: 100%;
-  max-height: calc(100vh - 2rem);
+  max-width: 570px;
+  max-height: 100%;
   overflow-y: auto;
+  padding: 26px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-raised);
+  border-radius: var(--radius-frame);
+  box-shadow: var(--shadow-modal);
+}
+
+.modal--wide {
+  max-width: 620px;
+}
+
+.modal-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+
+.modal-icon--danger {
+  background: var(--danger-wash);
+  color: var(--danger);
+}
+
+.modal-icon .icon {
+  font-size: 24px;
 }
 
 .modal-title {
-  font-size: 1.05rem;
-  margin-bottom: 0.4rem;
+  font-size: var(--text-h1);
+  font-weight: 600;
+  letter-spacing: var(--tracking-title);
 }
 
-.modal-subtitle {
-  font-size: 0.85rem;
-  opacity: 0.75;
-  margin-bottom: 1rem;
+.modal-copy {
+  font-size: var(--text-base);
+  color: var(--text-body);
+}
+
+.modal-inset {
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-inset);
+  border-radius: var(--radius-sm);
+}
+
+.modal-figure {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.modal-figure-value {
+  font-size: 46px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.modal-figure-unit {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.modal .progress {
+  width: 100%;
+}
+
+/* The modal is a flex column with align-items: flex-start (so a badge or
+   icon tile keeps its own size), which would otherwise shrink a validation
+   note to its text width and leave it floating mid-card. */
+.modal > .alert-note,
+.modal > .mapping-list {
+  width: 100%;
 }
 
 .modal-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 1rem;
+  gap: var(--space-4);
+  width: 100%;
 }
 
-.modal-actions button {
-  background: #222;
-  border: 1px solid #444;
-  border-radius: 4px;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.85rem;
-  padding: 0.4rem 0.9rem;
+.modal-action-grow {
+  flex: 1;
 }
 
-.modal-actions button:hover:not(:disabled) {
-  background: #2a2a2a;
-}
-
-.modal-actions button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-/* ─── Import mapping ───────────────────────────────────────────────────────── */
-
-.import-mapping-list {
-  list-style: none;
+.mapping-list {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: var(--space-3);
+  width: 100%;
+  list-style: none;
 }
 
-.import-mapping-row {
+.mapping-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid #2a2a2a;
+  gap: var(--space-4);
+  height: 64px;
+  padding: 0 var(--space-5);
+  background: var(--surface-card);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-sm);
 }
 
-.import-mapping-file {
+.mapping-row--unassigned {
+  border-color: var(--loop-border);
+}
+
+.mapping-row-file {
   display: flex;
   flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.mapping-row-name {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mapping-row-duration {
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+}
+
+.mapping-row-select {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--tap-default);
+  padding: 0 var(--space-4);
+  background: var(--surface-control);
+  border: 1px solid var(--border-raised);
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 1px 0 var(--highlight-inset);
+}
+
+.mapping-row-select .icon {
+  font-size: 18px;
+  color: var(--text-secondary);
+}
+
+.mapping-row-select:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.mapping-row-select select {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.mapping-row-select select:focus {
+  outline: none;
+}
+
+.mapping-row-select option {
+  background: var(--surface-card);
+  color: var(--text-primary);
+}
+
+/* ── Library ─────────────────────────────────────────────────────────── */
+
+.library-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+  position: relative;
+}
+
+.library-main.is-drop-active > *:not(.drop-overlay) {
+  opacity: 0.25;
+}
+
+.library-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.library-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+}
+
+.library-section-meta {
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+}
+
+.song-list,
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  list-style: none;
+}
+
+.song-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: 76px;
+  padding: 0 var(--space-6);
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.song-row:hover {
+  background: var(--surface-card);
+  border-color: var(--accent-border);
+}
+
+.song-row-play {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  min-height: 52px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.song-row-play .icon {
+  font-size: 26px;
+}
+
+.song-row:hover .song-row-play {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.song-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
   min-width: 0;
 }
 
-.import-mapping-name {
-  font-size: 0.9rem;
+.song-row-title {
+  font-size: var(--text-h3);
+  font-weight: 600;
+  letter-spacing: var(--tracking-title);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.import-mapping-duration {
-  font-size: 0.75rem;
+.song-row-meta {
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+}
+
+.song-row-title-input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 var(--space-4);
+  background: var(--surface-inset);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-h3);
+  font-weight: 600;
+}
+
+.song-row-title-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.song-row-thumb {
+  flex: none;
   opacity: 0.6;
 }
 
-.import-mapping-role {
+.song-row-thumb canvas {
+  display: block;
+}
+
+.song-row-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex: none;
+}
+
+/* ── Job panels ──────────────────────────────────────────────────────── */
+
+.job-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-7);
+  background: var(--surface-panel);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-panel);
+}
+
+.job-panel-head {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  flex-shrink: 0;
+  gap: var(--space-3);
 }
 
-.import-mapping-role select {
-  background: #222;
-  border: 1px solid #444;
-  border-radius: 4px;
-  color: inherit;
-  font-size: 0.85rem;
-  padding: 0.3rem 0.5rem;
+.job-panel-title {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.import-mapping-suggested {
-  font-size: 0.7rem;
-  opacity: 0.6;
-  font-style: italic;
+.job-panel-percent {
+  margin-left: auto;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
 }
 
-/* ─── Model download ───────────────────────────────────────────────────────── */
-
-.model-download-progress {
-  width: 100%;
-  height: 0.5rem;
-  accent-color: #863bff;
+.job-panel-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
 }
 
-.import-mapping-error {
-  font-size: 0.8rem;
-  color: #e0605a;
-  margin-top: 0.75rem;
+.job-panel-notice {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.job-panel-foot .btn {
+  margin-left: auto;
+}
+
+/* The one thing in the design that animates on a loop, and only while a
+   Separation is actually running. */
+.job-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: job-pulse 2s ease-in-out infinite;
+}
+
+@keyframes job-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  height: 64px;
+  padding: 0 var(--space-6);
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+}
+
+.queue-row-position {
+  flex: none;
+  width: 20px;
+  font-size: var(--text-sm);
+  color: var(--text-meta);
+}
+
+.queue-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.queue-row-title {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queue-row-meta {
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+}
+
+/* The unavailable reorder direction reads as unavailable, not as missing. */
+.queue-row .btn:disabled {
+  background: transparent;
+  color: oklch(0.40 0.008 260);
+  cursor: default;
+}
+
+/* ── Alert cards ─────────────────────────────────────────────────────── */
+
+.alert-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+  padding: var(--space-7);
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+}
+
+.alert-card--failed      { border-color: var(--danger-border); }
+.alert-card--failed .alert-card-icon { color: var(--danger); }
+.alert-card--interrupted { border-color: var(--loop-border); }
+.alert-card--interrupted .alert-card-icon { color: var(--loop); }
+.alert-card--quiet {
+  background: var(--surface-well);
+  align-items: center;
+}
+.alert-card--quiet .alert-card-icon { color: var(--loop); }
+
+.alert-card-icon {
+  font-size: 26px;
+  color: var(--text-meta);
+}
+
+.alert-card-text {
+  display: flex;
+  flex-direction: column;
+  /* Not the default `stretch`: a badge is an inline-flex chip, and a column
+     that stretches it turns it into a full-width outlined bar (the
+     length-cap card, whose badge is a direct child rather than sitting in
+     an .alert-card-head row). */
+  align-items: flex-start;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.alert-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.alert-card-time {
+  font-size: var(--text-2xs);
+  color: var(--text-meta);
+}
+
+.alert-card-title {
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.alert-card-copy {
+  font-size: var(--text-sm);
+  color: var(--text-body);
+}
+
+.alert-card-actions {
+  display: flex;
+  gap: var(--space-3);
+  flex: none;
+}
+
+/* ── Empty library ───────────────────────────────────────────────────── */
+
+.empty-library {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: var(--space-11);
+  align-items: start;
+}
+
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-12) var(--space-9);
+  background: var(--surface-well);
+  border: 2px dashed var(--border-control);
+  border-radius: var(--radius-frame);
+  text-align: center;
+}
+
+.drop-zone-icon {
+  font-size: 52px;
+  color: var(--text-meta);
+}
+
+.drop-zone-title {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-title);
+}
+
+.drop-zone-copy {
+  max-width: 420px;
+  font-size: var(--text-sm);
+  color: var(--text-body);
+}
+
+.drop-zone-actions {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.info-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.info-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-7);
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+}
+
+.info-panel > .icon {
+  font-size: 22px;
+  color: var(--text-meta);
+}
+
+.info-panel--loop {
+  border-color: var(--loop-border);
+}
+
+.info-panel--loop > .icon {
+  color: var(--loop);
+}
+
+.info-panel-title {
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.info-panel-copy {
+  font-size: var(--text-sm);
+  color: var(--text-body);
+}
+
+.info-panel-action {
+  margin-top: var(--space-1);
+}
+
+/* ── Drop overlay ────────────────────────────────────────────────────── */
+
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: oklch(0.145 0.008 260 / 0.82);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.drop-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-12) 64px;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-frame);
+}
+
+.drop-overlay-card .icon {
+  font-size: 46px;
+  color: var(--accent);
+}
+
+.drop-overlay-title {
+  font-size: var(--text-h2);
+  font-weight: 600;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+
+/* Below ~1100px the stem grid goes 2×2 rather than squeezing four cards
+   into widths where the Mute/Solo labels no longer fit. */
+@media (max-width: 1100px) {
+  .stem-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .empty-library {
+    grid-template-columns: 1fr;
+  }
+
+  .dock {
+    flex-wrap: wrap;
+    height: auto;
+    padding: var(--space-6) var(--space-7);
+    gap: var(--space-6);
+  }
+
+  .dock-divider {
+    display: none;
+  }
+}
+
+/*
+ * Mobile (design 2d), from ~700px down. Playback only: separation needs a
+ * desktop, and the design says so rather than offering a control that
+ * fails. Every hit target here is at least 44px.
+ */
+@media (max-width: 700px) {
+  .app-header {
+    height: 56px;
+    padding: 0 var(--space-6);
+    gap: var(--space-4);
+  }
+
+  /* The sample rate and stem count are desktop reassurance; on a phone the
+     title needs the width more than they do. */
+  .player-meta {
+    display: none;
+  }
+
+  .player-title {
+    font-size: var(--text-h3);
+  }
+
+  /* The loop readout wraps to three lines in a header-width caption, so on
+     mobile the row stacks instead of competing for one line. */
+  .stage-caption {
+    flex-wrap: wrap;
+  }
+
+  .stage-view-controls {
+    margin-left: 0;
+  }
+
+  .app-main {
+    padding: var(--space-6);
+  }
+
+  /* The chip's label is the first thing to go — the cloud_off glyph carries
+     the meaning on its own once space is tight. */
+  .offline-chip {
+    font-size: 0;
+    gap: 0;
+    padding: 0 var(--space-3);
+  }
+
+  .offline-chip .icon {
+    font-size: 18px;
+  }
+
+  /* The whole card is the mute target on mobile; a 6px fader thumb is not
+     something a thumb can hit. */
+  .stem-card-gain input {
+    display: none;
+  }
+
+  .stem-card-gain {
+    height: 5px;
+    background: linear-gradient(
+      to right,
+      var(--accent) 0 var(--fill, 0%),
+      var(--surface-track) var(--fill, 0%) 100%
+    );
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  /* The keyboard-shortcut number has no keyboard to belong to here. */
+  .stem-card-index {
+    display: none;
+  }
+
+  .stem-card-gain-value {
+    display: none;
+  }
+
+  .stem-card-toggles .btn {
+    min-height: var(--tap-default);
+  }
+
+  .stage-caption-values {
+    font-size: var(--text-4xs);
+  }
+
+  /* Design 2d: a tempo panel beside the Loop button, over a 104px transport
+     bar. Laid out as a two-row grid rather than a wrapping flex row so the
+     play button stays centred whatever the tempo group's height. */
+  .dock {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: var(--space-5);
+    padding: var(--space-5) var(--space-6);
+  }
+
+  .dock-group--tempo {
+    grid-row: 1;
+    grid-column: 1;
+  }
+
+  .dock-group--loop {
+    grid-row: 1;
+    grid-column: 2;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+
+  .dock-group--transport {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    justify-content: center;
+    gap: var(--space-9);
+    height: 104px;
+  }
+
+  .dock-play-button {
+    width: var(--tap-play-mobile);
+    height: var(--tap-play-mobile);
+  }
+
+  .dock-play-button .icon {
+    font-size: 40px;
+  }
+
+  .dock-skip {
+    display: inline-flex;
+  }
+
+  /* The total is on the waveform's own ruler; the bottom bar is for the
+     three transport targets and the position. */
+  .dock-timecode {
+    align-items: flex-start;
+  }
+
+  /* There is no Space key to advertise on a phone. */
+  .dock-play-hint {
+    display: none;
+  }
+
+  /* Reset lives in the precision drawer's reach on mobile; the stepper
+     buttons and the slider are what a thumb actually uses. */
+  .dock-tempo-reset,
+  .dock-tempo-note,
+  .dock-tempo-end {
+    display: none;
+  }
+
+  .dock-loop {
+    width: 96px;
+    min-height: 64px;
+  }
+
+  /* Set A / Set B go: placing a loop edge by ear needs a keyboard, and
+     the precision drawer covers it. Precision itself stays — Mono lives in
+     there, and halving playback memory is worth more on a phone than
+     anywhere else. */
+  .dock-set-bound {
+    display: none;
+  }
+
+  .dock-loop-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .precision-groups {
+    flex-direction: column;
+  }
+
+  .precision-divider {
+    width: auto;
+    height: 1px;
+  }
+
+  .precision-fields,
+  .precision-nudges {
+    flex-wrap: wrap;
+  }
+
+  .sheet-body,
+  .sheet-header,
+  .sheet-footer {
+    padding-left: var(--space-6);
+    padding-right: var(--space-6);
+  }
+
+  .song-row {
+    height: auto;
+    flex-wrap: wrap;
+    padding: var(--space-5) var(--space-6);
+    gap: var(--space-4);
+  }
+
+  .song-row-play {
+    width: 48px;
+    height: 48px;
+    min-height: 48px;
+  }
+
+  /* The silhouette is the first thing worth losing on a narrow row. */
+  .song-row-thumb {
+    display: none;
+  }
+
+  .song-row-actions {
+    width: 100%;
+  }
+
+  .song-row-actions .btn {
+    flex: 1;
+    min-height: var(--tap-default);
+  }
+
+  .alert-card,
+  .job-panel-foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .alert-card-actions .btn,
+  .job-panel-foot .btn {
+    flex: 1;
+    margin-left: 0;
+  }
+
+  .drop-zone-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  /* The footer keeps the status, which changes; the standing reminder wraps
+     to three lines out of a 48px bar and is on the export sheet anyway. */
+  .app-footer-note {
+    display: none;
+  }
+}
+
+/* Shown only in the mobile layout — see design 2d. */
+.mobile-only {
+  display: none;
+}
+
+.install-prompt {
+  align-items: center;
+  gap: var(--space-4);
+  flex: none;
+  padding: var(--space-5) var(--space-6);
+  background: var(--surface-panel);
+  border-top: 1px solid var(--loop-border);
+  font-size: var(--text-xs);
+  color: var(--text-body);
+}
+
+.install-prompt .icon {
+  font-size: 22px;
+  color: var(--loop);
+}
+
+/* The neutral "On" badge is the mobile-only third state word. */
+.stem-card-state-on {
+  display: none;
+  color: var(--text-meta);
+}
+
+@media (max-width: 700px) {
+  .stem-card-state-on {
+    display: inline-flex;
+  }
+}
+
+/* The legend swaps for one that names the mobile gesture. */
+.stem-grid-legend-compact {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .stem-grid-legend-wide {
+    display: none;
+  }
+
+  .stem-grid-legend-compact {
+    display: inline;
+  }
+}
+
+@media (max-width: 700px) {
+  .mobile-only {
+    display: flex;
+  }
 }

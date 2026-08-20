@@ -1,46 +1,48 @@
 import { memo, useEffect, useRef } from 'react';
-import type { Role } from '../domain/types.ts';
 import type { Viewport } from '../waveform/viewport.ts';
 import { aggregatePeaksForViewport } from '../waveform/pixels.ts';
 import { drawWaveform } from '../waveform/draw.ts';
 import { blitViewportShift } from '../waveform/blit.ts';
 import { sizeCanvas } from '../waveform/sizeCanvas.ts';
 
-const MUTED_ALPHA = 0.35;
-
-interface WaveformRowProps {
-  role: Role;
+interface WaveformCanvasProps {
   peaks: Int8Array | null;
-  muted: boolean;
+  /** A `--wave-*` colour from waveform/colors.ts — never an ad-hoc string. */
+  color: string;
   viewport: Viewport;
   sampleRate: number;
   widthPx: number;
   heightPx: number;
   dpr: number;
-  gesturing: boolean;
+  /** True only while a pan/zoom gesture is in flight; see the blit branch. */
+  gesturing?: boolean;
+  label: string;
+  className?: string;
 }
 
-// One canvas per stem row (§5.3): track state changes independently, so
-// each row redraws on its own — muting a stem redraws that row alone,
-// dimming its waveform, and never touches the other three canvases (each
-// is its own memoized component with its own effect deps). Sized to
-// devicePixelRatio and drawn entirely in that device-pixel space (no
-// ctx.scale), so drawWaveform's column count is the physical pixel width.
+// One canvas of peaks, at whatever size the caller asks for: the Stage's
+// tall full-mix waveform and each stem card's 34px strip are the same
+// component with different heights and colours (handoff "Waveform
+// rendering": the per-column min/max loop is unchanged, only the target
+// height differs).
 //
-// Click-to-seek and pan/zoom gestures live one level up in WaveformStack —
-// the x-to-seconds mapping is identical across all four rows, so there's no
-// reason for each row to own its own pointer handlers.
-export const WaveformRow = memo(function WaveformRow({
-  role,
+// Sized to devicePixelRatio and drawn entirely in that device-pixel space
+// (no ctx.scale), so drawWaveform's column count is the physical pixel
+// width. Pointer gestures live in the caller — the x-to-seconds mapping is
+// the caller's viewport, so there is no reason for each canvas to own
+// handlers.
+export const WaveformCanvas = memo(function WaveformCanvas({
   peaks,
-  muted,
+  color,
   viewport,
   sampleRate,
   widthPx,
   heightPx,
   dpr,
-  gesturing,
-}: WaveformRowProps) {
+  gesturing = false,
+  label,
+  className,
+}: WaveformCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // The viewport currently painted into the canvas's pixels — tracked
   // separately from the `viewport` prop because during a gesture the canvas
@@ -74,21 +76,23 @@ export const WaveformRow = memo(function WaveformRow({
     const ctx = sizeCanvas(canvas, physicalWidth, physicalHeight);
     if (!ctx) return;
 
-    ctx.strokeStyle = 'currentColor';
-    ctx.lineWidth = 1;
-    ctx.globalAlpha = muted ? MUTED_ALPHA : 1;
+    // Off states lose colour rather than gaining a different one: a muted
+    // stem is drawn in --wave-muted, not at reduced opacity, so the card's
+    // controls stay fully legible beside it.
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1, Math.round(dpr));
 
     const columns = peaks ? aggregatePeaksForViewport(peaks, viewport, physicalWidth, sampleRate) : [];
     drawWaveform(ctx, columns, physicalWidth, physicalHeight);
     paintedViewportRef.current = viewport;
-  }, [peaks, muted, physicalWidth, physicalHeight, viewport, sampleRate, gesturing]);
+  }, [peaks, color, physicalWidth, physicalHeight, viewport, sampleRate, gesturing, dpr]);
 
   return (
     <canvas
       ref={canvasRef}
-      className="waveform-row"
+      className={className}
       role="img"
-      aria-label={`${role} waveform`}
+      aria-label={label}
       style={{ width: widthPx, height: heightPx }}
     />
   );

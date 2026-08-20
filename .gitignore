@@ -5,3 +5,4 @@ prototype/
 *.mp3
 *.wav
 app/public/model/
+.DS_Store

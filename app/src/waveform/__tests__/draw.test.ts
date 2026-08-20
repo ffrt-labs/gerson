@@ -13,6 +13,8 @@ function fakeCtx(): Canvas2DLike & { calls: string[] } {
     moveTo: vi.fn((x, y) => calls.push(`moveTo:${x},${y}`)),
     lineTo: vi.fn((x, y) => calls.push(`lineTo:${x},${y}`)),
     stroke: vi.fn(() => calls.push('stroke')),
+    closePath: vi.fn(() => calls.push('closePath')),
+    fill: vi.fn(() => calls.push('fill')),
     fillRect: vi.fn((x, y, w, h) => calls.push(`fillRect:${x},${y},${w},${h}`)),
   };
 }

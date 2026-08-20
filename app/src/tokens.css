@@ -1,0 +1,140 @@
+/*
+ * Gerson UI redesign — design tokens
+ * ----------------------------------
+ * Canonical values are oklch(). The hex in each comment is the exact sRGB
+ * equivalent, for tooling that can't parse oklch (Figma, older Safari).
+ *
+ * Every colour in the redesign comes from this file. If a value you need
+ * isn't here, it wasn't in the design — ask before inventing one.
+ */
+
+:root {
+  /* ── Surfaces ─────────────────────────────────────────────────────────
+     A six-step dark ramp. Elevation reads by lightness, never by shadow
+     alone. Cards sit ON panels, panels sit ON the app background.         */
+  --surface-app:            oklch(0.145 0.008 260); /* #080a0e  page behind everything */
+  --surface-raised:         oklch(0.190 0.008 260); /* #121417  header, footer, transport dock */
+  --surface-well:           oklch(0.185 0.008 260); /* #111316  waveform container, footers */
+  --surface-panel:          oklch(0.210 0.009 260); /* #16181d  song rows, module panels */
+  --surface-card:           oklch(0.235 0.009 260); /* #1c1e22  stem cards, chips */
+  --surface-inset:          oklch(0.160 0.008 260); /* #0b0d11  numeric input wells */
+
+  /* ── Controls ─────────────────────────────────────────────────────── */
+  --surface-control:        oklch(0.290 0.010 260); /* #282b30  secondary button face */
+  --surface-control-hover:  oklch(0.340 0.012 260); /* #34383e  secondary button hover */
+  --surface-track:          oklch(0.260 0.010 260); /* #212429  slider / progress track */
+
+  /* ── Borders ──────────────────────────────────────────────────────── */
+  --border-subtle:          oklch(0.280 0.012 260); /* #25292f  panel + section dividers */
+  --border-control:         oklch(0.320 0.012 260); /* #2f3339  ghost button, input outline */
+  --border-raised:          oklch(0.420 0.014 260); /* #494d55  secondary button edge */
+  --highlight-inset:        oklch(0.440 0.014 260); /* #4e535a  inset 0 1px 0 top highlight */
+
+  /* ── Text ─────────────────────────────────────────────────────────────
+     Contrast against --surface-card, WCAG 2.1:
+       primary 14.87 · secondary 7.50 · body 6.52 · tertiary 4.57 · meta 3.61
+     tertiary is the floor for anything under 14px. meta is for uppercase
+     mono legends only (large-text tier); never use it for a sentence.      */
+  --text-primary:           oklch(0.960 0.004 260); /* #f0f2f4  titles, values, button labels */
+  --text-secondary:         oklch(0.750 0.008 260); /* #abaeb3  ghost button labels */
+  --text-body:              oklch(0.710 0.008 260); /* #9fa2a7  explanatory sentences */
+  --text-tertiary:          oklch(0.620 0.008 260); /* #83868b  small labels, ruler times */
+  --text-meta:              oklch(0.560 0.008 260); /* #727579  UPPERCASE MONO LEGENDS */
+  --text-disabled:          oklch(0.500 0.008 260); /* #616368  inactive controls only */
+
+  /* ── Accent: lime = engaged, playing, primary action ──────────────────
+     Reserved. If it's lime, it is either the primary action or a control
+     that is currently ON. Never decorative.                               */
+  --accent:                 oklch(0.840 0.190 128); /* #a6e146 */
+  --accent-hover:           oklch(0.890 0.180 128); /* #b8f163 */
+  --accent-border:          oklch(0.500 0.130 128); /* #4d7002  border on accent-tinted cards */
+  --on-accent:              oklch(0.160 0.008 260); /* #0b0d11  text on lime — 12.48:1 */
+  --accent-wash:            oklch(0.84 0.19 128 / 0.16);
+  --accent-ring:            oklch(0.84 0.19 128 / 0.18); /* engaged-toggle glow */
+
+  /* ── Loop: amber = the loop region and its markers ────────────────────
+     Inherited from the current app's #d9a441. Amber means "loop" and
+     nothing else, so loop state never competes with playback state.       */
+  --loop:                   oklch(0.800 0.140 76);  /* #f1b047 */
+  --loop-border:            oklch(0.450 0.090 76);  /* #714d0a */
+  --on-loop:                oklch(0.180 0.030 76);  /* #191003  text on amber — 9.89:1 */
+  --loop-region-fill:       oklch(0.80 0.14 76 / 0.30); /* lane wash */
+  --loop-region-wash:       oklch(0.80 0.14 76 / 0.13); /* over the waveform */
+  --loop-ring:              oklch(0.80 0.14 76 / 0.18);
+
+  /* ── Danger ───────────────────────────────────────────────────────── */
+  --danger:                 oklch(0.720 0.170 25);  /* #fd736d  failure text + icon */
+  --danger-border:          oklch(0.660 0.180 25);  /* #ec5b57 */
+  --danger-wash:            oklch(0.66 0.18 25 / 0.16); /* Delete button hover */
+
+  /* ── Waveform (canvas stroke/fill — not CSS) ───────────────────────── */
+  --wave-neutral:           #9fadc0;  /* full-mix + inactive stem peaks */
+  --wave-stem:              #95a2b4;  /* per-stem mini waveform */
+  --wave-muted:             #4e5765;  /* muted stem */
+  --wave-solo:              #a8ef55;  /* soloed stem, and the playhead */
+
+  /* ── Type ─────────────────────────────────────────────────────────────
+     Two families, strict split:
+       Sora        — all prose, labels, button text
+       JetBrains Mono — every NUMBER, timecode, and uppercase legend
+     A number never renders in Sora. This is what makes timecodes stop
+     shifting width as they count.                                        */
+  --font-sans: 'Sora', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Type scale actually used (px) */
+  --text-display: 64px;  /* tempo readout, weight 700, tracking -0.04em */
+  --text-title:   26px;  /* transport timecode, weight 500 */
+  --text-h1:      20px;  /* modal titles, weight 600 */
+  --text-h2:      18px;  /* screen title, weight 600 */
+  --text-h3:      17px;  /* song title, stem name, weight 600 */
+  --text-lg:      16px;  /* primary button, stem card name */
+  --text-base:    15px;  /* button labels, body in modals */
+  --text-sm:      14px;  /* body copy, secondary buttons */
+  --text-xs:      13px;  /* dense controls, helper text */
+  --text-2xs:     12px;  /* mono meta */
+  --text-3xs:     11px;  /* mono legends, badges */
+  --text-4xs:     10px;  /* uppercase mono micro-legends, ruler */
+
+  /* Letter-spacing conventions */
+  --tracking-title:  -0.01em; /* 17px+ Sora headings */
+  --tracking-display:-0.04em; /* the big tempo number */
+  --tracking-legend:  0.14em; /* UPPERCASE MONO LEGENDS */
+  --tracking-badge:   0.10em; /* SHORT UPPERCASE BADGES */
+
+  /* ── Radius ───────────────────────────────────────────────────────── */
+  --radius-frame:   14px; /* app window */
+  --radius-panel:   12px; /* modules, alert cards */
+  --radius-card:    11px; /* stem cards, song rows */
+  --radius-well:    10px; /* waveform container */
+  --radius-control:  9px; /* primary/secondary buttons ≥46px tall */
+  --radius-sm:       8px; /* buttons ≤44px, inputs */
+  --radius-xs:       7px; /* small/dense buttons */
+  --radius-chip:     4px; /* status badges */
+  --radius-pill:   999px; /* offline chip, floating transport */
+
+  /* ── Spacing (px, 2/4-based) ──────────────────────────────────────── */
+  --space-1:  4px;  --space-2:  6px;  --space-3:  8px;  --space-4: 10px;
+  --space-5: 12px;  --space-6: 14px;  --space-7: 16px;  --space-8: 18px;
+  --space-9: 20px;  --space-10:22px;  --space-11:24px;  --space-12:28px;
+
+  /* ── Elevation ────────────────────────────────────────────────────── */
+  --shadow-window:  0 40px 80px -20px rgba(0, 0, 0, 0.7);
+  --shadow-drawer: -24px 0 60px -12px rgba(0, 0, 0, 0.7);  /* side sheet */
+  --shadow-dock:    0 -18px 40px -12px rgba(0, 0, 0, 0.6); /* bottom drawer */
+  --shadow-float:   0 18px 40px -8px rgba(0, 0, 0, 0.75);  /* floating transport */
+  --shadow-modal:   0 30px 60px -12px rgba(0, 0, 0, 0.8);
+  --shadow-knob:    0 2px 6px rgba(0, 0, 0, 0.55);         /* slider thumb */
+  --shadow-accent:  0 2px 12px oklch(0.84 0.19 128 / 0.22);/* primary button */
+  --shadow-play:    0 4px 14px oklch(0.84 0.19 128 / 0.30),
+                    inset 0 1px 0 oklch(0.94 0.14 128);    /* play button */
+
+  /* ── Hit targets (minimums — do not go under) ─────────────────────── */
+  --tap-play-desktop: 62px; /* transport play */
+  --tap-play-mobile:  76px;
+  --tap-primary:      52px; /* primary action in a sheet/modal */
+  --tap-toggle:       46px; /* stem Mute / Solo */
+  --tap-default:      44px; /* header buttons, row actions, selects */
+  --tap-dense:        40px; /* icon buttons in a row of many */
+  --tap-min:          38px; /* absolute floor, desktop only */
+}

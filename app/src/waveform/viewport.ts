@@ -95,7 +95,7 @@ export function followViewport(
 
 /**
  * The whole auto-follow decision, as one pure function: the next viewport,
- * or `null` when there is nothing to do. `WaveformStack` applies this during
+ * or `null` when there is nothing to do. `WaveformStage` applies this during
  * render, so its termination is this function's contract, not the caller's
  * discipline — **calling it again with the viewport it just returned must
  * yield `null`** (see the idempotency test), or the render loops until React
