@@ -56,11 +56,42 @@ Build variables:
 rejects `pnpm-workspace.yaml` outright ("packages field missing or empty")
 and cannot read the v9 lockfile.
 
-### The model weights are not deployed
+### The model weights live in R2
 
-`src/separation/model.ts` fetches the weights from `/model/ggml-model-htdemucs-4s-f16.bin`
-on the deploy origin. That file is ~80 MB, gitignored, and over Cloudflare's
-25 MiB per-asset limit — it will never ship in `dist`. Serving it needs a
-separate host (R2 bucket, or the upstream Hugging Face copy) and `MODEL_URL`
-pointed at it; until then a deployed build reaches the download popup and
-fails there.
+`src/separation/model.ts` fetches the weights from `/model/ggml-model-htdemucs-4s-f16.bin`.
+That file is ~80 MB — well over Cloudflare's 25 MiB per-asset limit, so it can
+never ship in `dist`. It lives in an R2 bucket instead, proxied by
+`worker/index.ts` so the fetch stays same-origin and no CORS is involved.
+`run_worker_first` in `wrangler.jsonc` is what stops the SPA fallback from
+answering `/model/*` with `index.html`.
+
+R2's free tier covers this: 10 GB-month of storage, 10 million Class B (read)
+operations, and no egress charges. One 80 MB object and one GET per user's
+first separation is not close to any of those. Cloudflare does require a
+payment method on the account before R2 can be enabled.
+
+One-time setup, from `app/`:
+
+```sh
+# The bucket name must match r2_buckets[0].bucket_name in wrangler.jsonc.
+npx wrangler r2 bucket create gerson-model
+
+# See wasm/README.md, "Producing the model weights", for where this comes
+# from and how to verify its SHA-256 before uploading.
+npx wrangler r2 object put \
+  gerson-model/ggml-model-htdemucs-4s-f16.bin \
+  --file public/model/ggml-model-htdemucs-4s-f16.bin \
+  --content-type application/octet-stream \
+  --remote
+```
+
+The client verifies the SHA-256 of whatever it downloads against
+`wasm/dist/model-sha256.ts` before committing it to OPFS, so a wrong or
+truncated upload surfaces as a hash-mismatch error rather than a broken
+separation.
+
+### Regenerating binding types
+
+`worker-configuration.d.ts` is generated from `wrangler.jsonc` and committed so
+CI can typecheck without running wrangler. After changing bindings, run
+`pnpm cf-typegen`.
