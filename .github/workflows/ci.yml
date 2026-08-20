@@ -35,3 +35,10 @@ jobs:
       - run: pnpm lint
 
       - run: pnpm build
+
+      # Bundles the worker and resolves every binding in wrangler.jsonc
+      # without touching the network. Config breakage otherwise surfaces only
+      # in a Cloudflare build, whose log lives behind the dashboard.
+      - run: npx wrangler deploy --dry-run
+        env:
+          WRANGLER_SEND_METRICS: 'false'
