@@ -46,6 +46,14 @@ Cloudflare build settings:
 | Build command | `pnpm install --frozen-lockfile && pnpm build` |
 | Deploy command | `npx wrangler deploy` |
 
+Workers Builds keeps a **separate copy of these settings per trigger**. The
+production trigger (branch `main`) and the "Deploy non-production branches"
+trigger each carry their own build command and root directory, and the
+settings panel shows only the production one. A PR build using a root
+directory you never configured is the symptom: the other trigger still has the
+old values. Change both, or delete the non-production trigger if preview
+builds aren't wanted.
+
 The build command must install. Cloudflare's build image runs exactly what it
 is given and nothing implicit beforehand, so a bare `pnpm build` fails with
 `tsc: not found` — there is no node_modules yet.
