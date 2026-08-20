@@ -1,2 +1,12 @@
+# Single-package "workspace": this file exists only to carry pnpm settings
+# (allowBuilds), but pnpm < 10 rejects it outright unless `packages` is set —
+# which is what broke the Cloudflare build before PNPM_VERSION was pinned.
+packages:
+  - '.'
+
 allowBuilds:
   sharp: true
+  # wrangler's runtime — its postinstall unpacks the workerd binary, without
+  # which `wrangler deploy` can't run in the Cloudflare build container.
+  esbuild: true
+  workerd: true

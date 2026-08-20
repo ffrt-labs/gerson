@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "gerson",
+  "compatibility_date": "2026-08-20",
+  "assets": {
+    "directory": "./dist",
+    // react-router owns the routes: any path that isn't a real file must be
+    // served index.html rather than a 404, or a deep link / reload 404s.
+    "not_found_handling": "single-page-application"
+  }
+}
