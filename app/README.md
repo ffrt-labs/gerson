@@ -33,9 +33,10 @@ See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rule
 
 ## Deploying to Cloudflare
 
-The app deploys as an assets-only Worker (`wrangler.jsonc`), served from
-`app/dist`. `not_found_handling: "single-page-application"` hands unknown
-paths to `index.html` so react-router deep links and reloads resolve.
+The app deploys as a Worker (`wrangler.jsonc`) serving `dist` as static
+assets, plus `worker/index.ts` for the model weights (see below).
+`not_found_handling: "single-page-application"` hands unknown paths to
+`index.html` so react-router deep links and reloads resolve.
 
 Cloudflare build settings:
 
@@ -45,16 +46,18 @@ Cloudflare build settings:
 | Build command | `pnpm install --frozen-lockfile && pnpm build` |
 | Deploy command | `npx wrangler deploy` |
 
-Build variables:
+The build command must install. Cloudflare's build image runs exactly what it
+is given and nothing implicit beforehand, so a bare `pnpm build` fails with
+`tsc: not found` — there is no node_modules yet.
 
-| Variable | Value |
-| --- | --- |
-| `PNPM_VERSION` | `10.33.0` |
-| `NODE_VERSION` | `22` |
-
-`PNPM_VERSION` is not optional. The build image ships an older pnpm that
-rejects `pnpm-workspace.yaml` outright ("packages field missing or empty")
-and cannot read the v9 lockfile.
+The pnpm and Node versions come from the repo rather than dashboard build
+variables: `packageManager` in `package.json` and `.node-version`, both of
+which the build image reads, and both of which CI reads too. Pinning pnpm is
+not optional — the image's default is old enough to reject
+`pnpm-workspace.yaml` outright ("packages field missing or empty") and cannot
+read the v9 lockfile. If the build log's "Detected the following tools from
+environment:" line comes back empty, those two files aren't being seen, which
+means the root directory is wrong.
 
 ### The model weights live in R2
 

@@ -15,13 +15,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No version pin here: it comes from `packageManager` in
+      # app/package.json, which Cloudflare's build image reads too — one
+      # source of truth for the pnpm version across CI and deploys.
       - uses: pnpm/action-setup@v4
         with:
-          version: 11
+          package_json_file: app/package.json
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: app/.node-version
           cache: pnpm
           cache-dependency-path: app/pnpm-lock.yaml
 
