@@ -1,5 +1,9 @@
 /**
- * Test-environment shim for emscripten's wasm loader.
+ * Test-environment shim for emscripten's wasm loader. Applied only to the
+ * "codec" Vitest project (vitest.config.ts) — the test files that call
+ * encodePcm/decodeFlac/createEncoder for real — see #84. Patching
+ * globalThis.fetch is broader than any other test needs, so it must not be
+ * suite-wide.
  *
  * libflacjs's real-wasm build (`libflac.wasm.js` — see codec/flac.ts for why
  * that build and not the wasm2js one) resolves its `.wasm` sidecar and then
